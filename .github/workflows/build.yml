@@ -1,0 +1,19 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the app
+        run: scripts/build.sh --app-only
+      - name: Check the bundle
+        run: |
+          test -x dist/Dockling.app/Contents/MacOS/Dockling
+          test -f dist/Dockling.app/Contents/Resources/Skin/sheet.png
+          codesign --verify --strict dist/Dockling.app

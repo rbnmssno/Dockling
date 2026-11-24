@@ -1,0 +1,7 @@
+.build/
+dist/
+.vscode/
+.DS_Store
+# Local only: the private signing key and the design workspace.
+signing/
+design/

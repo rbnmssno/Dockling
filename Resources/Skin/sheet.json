@@ -1,0 +1,211 @@
+{
+  "image": "sheet.png",
+  "frameWidth": 48,
+  "frameHeight": 52,
+  "columns": 10,
+  "rows": 25,
+  "baselineY": 50,
+  "note": "hard alpha, no semi-transparent pixels; soles sit on y=50",
+  "animations": [
+    {
+      "name": "idle",
+      "title": "Покой",
+      "row": 0,
+      "frames": 6,
+      "fps": 6,
+      "loop": true
+    },
+    {
+      "name": "walk_right",
+      "title": "Ходьба вправо",
+      "row": 1,
+      "frames": 8,
+      "fps": 8,
+      "loop": true
+    },
+    {
+      "name": "walk_left",
+      "title": "Ходьба влево",
+      "row": 2,
+      "frames": 8,
+      "fps": 8,
+      "loop": true
+    },
+    {
+      "name": "wave",
+      "title": "Машет",
+      "row": 3,
+      "frames": 6,
+      "fps": 6,
+      "loop": true
+    },
+    {
+      "name": "think",
+      "title": "Думает",
+      "row": 4,
+      "frames": 6,
+      "fps": 6,
+      "loop": true
+    },
+    {
+      "name": "talk",
+      "title": "Говорит",
+      "row": 5,
+      "frames": 6,
+      "fps": 8,
+      "loop": true
+    },
+    {
+      "name": "sleep_in",
+      "title": "Засыпает",
+      "row": 6,
+      "frames": 5,
+      "fps": 5,
+      "loop": false
+    },
+    {
+      "name": "sleep",
+      "title": "Спит",
+      "row": 7,
+      "frames": 6,
+      "fps": 4,
+      "loop": true
+    },
+    {
+      "name": "wake",
+      "title": "Просыпается",
+      "row": 8,
+      "frames": 6,
+      "fps": 8,
+      "loop": false
+    },
+    {
+      "name": "held",
+      "title": "Висит в руке",
+      "row": 9,
+      "frames": 6,
+      "fps": 8,
+      "loop": true
+    },
+    {
+      "name": "fall",
+      "title": "Падает",
+      "row": 10,
+      "frames": 4,
+      "fps": 10,
+      "loop": true
+    },
+    {
+      "name": "land",
+      "title": "Приземлился",
+      "row": 11,
+      "frames": 5,
+      "fps": 10,
+      "loop": false
+    },
+    {
+      "name": "work",
+      "title": "Работает",
+      "row": 12,
+      "frames": 8,
+      "fps": 4,
+      "loop": true
+    },
+    {
+      "name": "wait",
+      "title": "Ждёт тебя",
+      "row": 13,
+      "frames": 6,
+      "fps": 6,
+      "loop": true
+    },
+    {
+      "name": "done",
+      "title": "Готово",
+      "row": 14,
+      "frames": 6,
+      "fps": 8,
+      "loop": false
+    },
+    {
+      "name": "error",
+      "title": "Ошибка / расстроен",
+      "row": 15,
+      "frames": 6,
+      "fps": 6,
+      "loop": true
+    },
+    {
+      "name": "error_in",
+      "title": "Ошибка: переход",
+      "row": 16,
+      "frames": 5,
+      "fps": 7,
+      "loop": false
+    },
+    {
+      "name": "music",
+      "title": "Музыка",
+      "row": 17,
+      "frames": 8,
+      "fps": 8,
+      "loop": true
+    },
+    {
+      "name": "catch",
+      "title": "Поймал файл",
+      "row": 18,
+      "frames": 6,
+      "fps": 8,
+      "loop": false
+    },
+    {
+      "name": "call",
+      "title": "Зовёт",
+      "row": 19,
+      "frames": 6,
+      "fps": 8,
+      "loop": true
+    },
+    {
+      "name": "happy",
+      "title": "Радуется",
+      "row": 20,
+      "frames": 6,
+      "fps": 8,
+      "loop": true
+    },
+    {
+      "name": "charge_on",
+      "title": "Заряд подключен",
+      "row": 21,
+      "frames": 6,
+      "fps": 8,
+      "loop": false
+    },
+    {
+      "name": "charge_off",
+      "title": "Заряд отключен",
+      "row": 22,
+      "frames": 6,
+      "fps": 8,
+      "loop": false
+    },
+    {
+      "name": "work_in",
+      "title": "Садится за ноут",
+      "row": 23,
+      "frames": 8,
+      "fps": 8,
+      "loop": false
+    },
+    {
+      "name": "work_out",
+      "title": "Встаёт из-за ноута",
+      "row": 24,
+      "frames": 8,
+      "fps": 8,
+      "loop": false
+    }
+  ]
+}

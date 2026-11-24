@@ -1,0 +1,240 @@
+import Foundation
+
+/// Limits of the Claude plan, as Claude Code reports them with each answer.
+struct PlanLimits: Equatable {
+    var session: Double?
+    var week: Double?
+    var sessionReset: Date?
+    var weekReset: Date?
+}
+
+/// A conversation with Claude through the user's own Claude Code, on their subscription login.
+/// One `claude -p` process stays open for the whole conversation; messages go in and the answer
+/// streams out as JSON lines. It has no tools: it only talks.
+final class ClaudeChat {
+    enum Event {
+        case partial(String)
+        case finished(String)
+        case failed(String)
+        case limits(PlanLimits)
+    }
+
+    var onEvent: ((Event) -> Void)?
+    var binaryOverride: () -> String = { "" }
+
+    private var process: Process?
+    private var input: FileHandle?
+    private var buffer = Data()
+    private var reply = ""
+    private var replying = false
+    /// The conversation so far, to carry it over when the process has to be restarted.
+    private var history: [(user: Bool, text: String)] = []
+    private var carryOver = false
+
+    static let rules = """
+    Ты Claude в образе маленького пиксельного призрака в чёрном капюшоне. Он живёт на Dock у пользователя на Mac как настольный питомец, \
+    и с ним разговаривают в маленьком окошке. Ты только разговариваешь: у тебя нет доступа к файлам, терминалу и интернету, \
+    но тебе могут прислать текст, файл или скриншот прямо в сообщении. Отвечай на языке собеседника, по умолчанию по-русски. \
+    Отвечай коротко: одно-три предложения, если не просят подробнее. Говори по делу, спокойно, иногда с лёгкой иронией. \
+    Не используй эмодзи и разметку Markdown: текст показывается как есть в маленьком пузыре. \
+    В начале сообщения может стоять строка в квадратных скобках с текущим временем и календарём пользователя: это справка для тебя, \
+    а не слова пользователя.
+    """
+
+    var isRunning: Bool { process?.isRunning == true }
+
+    // MARK: - Finding Claude Code
+
+    /// Claude Code on PATH-like places first, then the copy the VS Code extension carries.
+    static func locate(custom: String) -> URL? {
+        let fm = FileManager.default
+        if !custom.isEmpty, fm.isExecutableFile(atPath: (custom as NSString).expandingTildeInPath) {
+            return URL(fileURLWithPath: (custom as NSString).expandingTildeInPath)
+        }
+        let home = NSHomeDirectory()
+        let candidates = [
+            home + "/.local/bin/claude", home + "/.claude/local/claude",
+            "/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+        ]
+        if let path = candidates.first(where: { fm.isExecutableFile(atPath: $0) }) {
+            return URL(fileURLWithPath: path)
+        }
+        for dir in [home + "/.vscode/extensions", home + "/.cursor/extensions", home + "/.windsurf/extensions"] {
+            let names = (try? fm.contentsOfDirectory(atPath: dir)) ?? []
+            let newest = names.filter { $0.hasPrefix("anthropic.claude-code-") }
+                .sorted { $0.compare($1, options: .numeric) == .orderedDescending }
+            for name in newest {
+                let path = dir + "/" + name + "/resources/native-binary/claude"
+                if fm.isExecutableFile(atPath: path) { return URL(fileURLWithPath: path) }
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Talking
+
+    /// Sends one message. `parts` are content blocks: text and, for screenshots, images.
+    func send(text: String, image: Data? = nil) {
+        guard ensureProcess() else { return }
+        var message = text
+        if carryOver, !history.isEmpty {
+            let earlier = history.suffix(12).map { ($0.user ? "Пользователь: " : "Ты: ") + $0.text }.joined(separator: "\n")
+            message = "[Начало этого разговора, для памяти:\n" + earlier + "]\n\n" + text
+            carryOver = false
+        }
+        var content: [[String: Any]] = []
+        if let image {
+            content.append(["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": image.base64EncodedString()]])
+        }
+        content.append(["type": "text", "text": message])
+        let line: [String: Any] = ["type": "user", "message": ["role": "user", "content": content]]
+        guard let data = try? JSONSerialization.data(withJSONObject: line) else { return }
+        history.append((true, text))
+        reply = ""
+        replying = true
+        input?.write(data + Data("\n".utf8))
+    }
+
+    /// Stops the answer. The command-line mode has no "stop" message, so the process ends; the next
+    /// message starts a new one and carries the conversation over.
+    func stop() {
+        guard replying else { return }
+        replying = false
+        if !reply.isEmpty { history.append((false, reply)) }
+        let partial = reply
+        terminate()
+        carryOver = true
+        onEvent?(.finished(partial))
+    }
+
+    /// Forgets the conversation.
+    func reset() {
+        replying = false
+        history.removeAll()
+        carryOver = false
+        terminate()
+    }
+
+    private func terminate() {
+        guard let process else { return }
+        process.terminationHandler = nil
+        if process.isRunning { process.terminate() }
+        self.process = nil
+        input = nil
+        buffer.removeAll()
+    }
+
+    // MARK: - The process
+
+    private func ensureProcess() -> Bool {
+        if process?.isRunning == true { return true }
+        guard let binary = Self.locate(custom: binaryOverride()) else {
+            onEvent?(.failed("Не нашёл Claude Code. Установи его или укажи путь в настройках."))
+            return false
+        }
+        let p = Process()
+        p.executableURL = binary
+        p.arguments = ["-p", "--input-format", "stream-json", "--output-format", "stream-json",
+                       "--include-partial-messages", "--verbose", "--tools", "", "--safe-mode",
+                       "--no-session-persistence", "--system-prompt", Self.rules]
+        p.currentDirectoryURL = Paths.folder("Chat")
+        var env = ProcessInfo.processInfo.environment
+        // Any of these would quietly switch Claude Code from the subscription to paid API access.
+        for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"] {
+            env.removeValue(forKey: key)
+        }
+        env["PATH"] = (env["PATH"] ?? "") + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+        p.environment = env
+        let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
+        p.standardInput = stdin
+        p.standardOutput = stdout
+        p.standardError = stderr
+        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            DispatchQueue.main.async { self?.consume(data) }
+        }
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty { Log.debug("claude stderr: " + (String(data: data, encoding: .utf8) ?? "")) }
+        }
+        p.terminationHandler = { [weak self, weak p] _ in
+            DispatchQueue.main.async {
+                guard let self, let p, self.process === p else { return }
+                self.process = nil
+                self.input = nil
+                self.carryOver = true
+                if self.replying {
+                    self.replying = false
+                    self.onEvent?(.failed(self.reply.isEmpty ? "Claude Code закрылся. Напиши ещё раз." : self.reply))
+                }
+            }
+        }
+        do {
+            try p.run()
+        } catch {
+            onEvent?(.failed("Claude Code не запустился."))
+            Log.error("claude launch failed: \(error)")
+            return false
+        }
+        process = p
+        input = stdin.fileHandleForWriting
+        return true
+    }
+
+    private func consume(_ data: Data) {
+        buffer.append(data)
+        while let nl = buffer.firstIndex(of: 0x0A) {
+            let line = buffer[buffer.startIndex..<nl]
+            buffer.removeSubrange(buffer.startIndex...nl)
+            guard !line.isEmpty,
+                  let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { continue }
+            handle(obj)
+        }
+    }
+
+    private func handle(_ e: [String: Any]) {
+        switch e["type"] as? String {
+        case "stream_event":
+            guard replying, let ev = e["event"] as? [String: Any], ev["type"] as? String == "content_block_delta",
+                  let delta = ev["delta"] as? [String: Any], delta["type"] as? String == "text_delta",
+                  let piece = delta["text"] as? String else { return }
+            reply += piece
+            onEvent?(.partial(reply))
+        case "rate_limit_event":
+            guard let info = e["rate_limit_info"] as? [String: Any], let windows = info["unifiedWindows"] as? [String: Any] else { return }
+            var limits = PlanLimits()
+            if let s = windows["five_hour"] as? [String: Any] {
+                limits.session = (s["utilization"] as? Double).map { $0 * 100 }
+                limits.sessionReset = (s["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0) }
+            }
+            if let w = windows["seven_day"] as? [String: Any] {
+                limits.week = (w["utilization"] as? Double).map { $0 * 100 }
+                limits.weekReset = (w["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0) }
+            }
+            onEvent?(.limits(limits))
+        case "result":
+            guard replying else { return }
+            replying = false
+            let text = (e["result"] as? String) ?? reply
+            if (e["is_error"] as? Bool) == true {
+                onEvent?(.failed(Self.explain(text)))
+            } else {
+                history.append((false, text))
+                onEvent?(.finished(text))
+            }
+        default:
+            break
+        }
+    }
+
+    /// Turns Claude Code's error text into something a person can act on.
+    private static func explain(_ text: String) -> String {
+        let lower = text.lowercased()
+        if lower.contains("login") || lower.contains("auth") || lower.contains("api key") {
+            return "Claude Code не вошёл в аккаунт. Открой Claude Code и войди в свою подписку, потом напиши ещё раз."
+        }
+        if lower.contains("limit") { return "Лимит Claude закончился. Он обновится позже." }
+        return "Claude Code ответил ошибкой: " + text.prefix(160)
+    }
+}
