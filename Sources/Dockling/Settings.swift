@@ -146,6 +146,9 @@ struct SettingsView: View {
                         Button(tr("Указать…", "Choose…"), action: pickClaude)
                     }
                     Toggle(tr("Отвечать вслух на голосовые вопросы", "Read answers to voice questions aloud"), isOn: $prefs.speakVoiceReplies)
+                    Toggle(tr("Следить за лимитами, пока работает Claude Code", "Keep an eye on the limits while Claude Code works"), isOn: $prefs.watchLimits)
+                    Text(tr("Лимиты приходят только вместе с ответом, поэтому раз в несколько минут через Claude Code уходит самый маленький запрос: около тысячи токенов самой дешёвой модели. Без этого лимиты узнаются, когда открываешь чат.", "The limits only come with an answer, so every few minutes the smallest request goes through Claude Code: about a thousand tokens of the cheapest model. Without this, the limits are asked for when you open the chat."))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 section("Claude Code") {
                     Toggle(tr("Показывать, что делает Claude Code", "Show what Claude Code is doing"), isOn: Binding(get: { hooks.installed }, set: { hooks.setInstalled($0) }))

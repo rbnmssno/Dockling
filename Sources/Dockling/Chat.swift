@@ -32,6 +32,8 @@ final class ChatModel: ObservableObject {
     @Published var listening = false
     @Published var attachment: ChatAttachment?
     @Published var limits = PlanLimits()
+    /// Claude Code is being asked for the limits right now.
+    @Published var checkingLimits = false
     @Published var status = ChatModel.online
     @Published var avatar: NSImage?
     /// How sharply the screen behind the glass shows through (0..1), from the transparency setting.
@@ -168,7 +170,9 @@ struct ChatView: View {
     }
 
     private var limitNote: String {
-        guard let reset = model.limits.sessionReset else { return tr("Лимиты появятся после первого ответа.", "Limits appear after the first reply.") }
+        guard let reset = model.limits.sessionReset else {
+            return model.checkingLimits ? tr("Узнаю лимиты…", "Checking the limits…") : tr("Лимиты появятся после первого ответа.", "Limits appear after the first reply.")
+        }
         let mins = Int(reset.timeIntervalSinceNow / 60)
         if mins < 1 { return tr("Лимит сессии уже обновился, цифры уточнятся со следующим ответом.", "The session limit has reset; the numbers update with the next reply.") }
         return tr("Сессия обновится через ", "Session resets in ") + durationText(minutes: mins) + "."

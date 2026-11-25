@@ -19,6 +19,13 @@ final class Preferences: ObservableObject {
     @Published var walkSpeed: Double { didSet { store.set(walkSpeed, forKey: Key.walkSpeed) } }
     @Published var strolls: Bool { didSet { store.set(strolls, forKey: Key.strolls) } }
     @Published var speakVoiceReplies: Bool { didSet { store.set(speakVoiceReplies, forKey: Key.speakVoiceReplies) } }
+    /// Ask Claude Code for the limits while it works, not only when the chat opens.
+    @Published var watchLimits: Bool { didSet { store.set(watchLimits, forKey: Key.watchLimits) } }
+    /// The limits as last heard, for the chat to show at once.
+    var lastLimits: PlanLimits {
+        get { PlanLimits(stored: (store.dictionary(forKey: Key.lastLimits) as? [String: Double]) ?? [:]) }
+        set { store.set(newValue.stored, forKey: Key.lastLimits) }
+    }
     @Published var screenshotOffers: Bool { didSet { store.set(screenshotOffers, forKey: Key.screenshotOffers) } }
     @Published var calendarReminders: Bool { didSet { store.set(calendarReminders, forKey: Key.calendarReminders) } }
     @Published var showMenuBarIcon: Bool { didSet { store.set(showMenuBarIcon, forKey: Key.showMenuBarIcon) } }
@@ -38,6 +45,8 @@ final class Preferences: ObservableObject {
         static let walkSpeed = "walkSpeed"
         static let strolls = "strolls"
         static let speakVoiceReplies = "speakVoiceReplies"
+        static let watchLimits = "watchLimits"
+        static let lastLimits = "lastLimits"
         static let screenshotOffers = "screenshotOffers"
         static let calendarReminders = "calendarReminders"
         static let showMenuBarIcon = "showMenuBarIcon"
@@ -69,6 +78,7 @@ final class Preferences: ObservableObject {
         walkSpeed = store.double(forKey: Key.walkSpeed).clamped(Self.speedRange.lowerBound, Self.speedRange.upperBound)
         strolls = store.bool(forKey: Key.strolls)
         speakVoiceReplies = store.bool(forKey: Key.speakVoiceReplies)
+        watchLimits = store.bool(forKey: Key.watchLimits)
         screenshotOffers = store.bool(forKey: Key.screenshotOffers)
         calendarReminders = store.bool(forKey: Key.calendarReminders)
         showMenuBarIcon = store.bool(forKey: Key.showMenuBarIcon)

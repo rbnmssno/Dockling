@@ -6,6 +6,52 @@ struct PlanLimits: Equatable {
     var week: Double?
     var sessionReset: Date?
     var weekReset: Date?
+
+    init(session: Double? = nil, week: Double? = nil, sessionReset: Date? = nil, weekReset: Date? = nil) {
+        self.session = session
+        self.week = week
+        self.sessionReset = sessionReset
+        self.weekReset = weekReset
+    }
+
+    /// From a `rate_limit_event` line of Claude Code's output; nil for any other line.
+    init?(event e: [String: Any]) {
+        guard e["type"] as? String == "rate_limit_event", let info = e["rate_limit_info"] as? [String: Any],
+              let windows = info["unifiedWindows"] as? [String: Any] else { return nil }
+        if let s = windows["five_hour"] as? [String: Any] {
+            session = (s["utilization"] as? Double).map { $0 * 100 }
+            sessionReset = (s["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0) }
+        }
+        if let w = windows["seven_day"] as? [String: Any] {
+            week = (w["utilization"] as? Double).map { $0 * 100 }
+            weekReset = (w["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0) }
+        }
+    }
+
+    /// Without the windows that have reset since: their numbers are no longer true.
+    var current: PlanLimits {
+        var l = self
+        if let r = sessionReset, r < Date() { l.session = nil; l.sessionReset = nil }
+        if let r = weekReset, r < Date() { l.week = nil; l.weekReset = nil }
+        return l
+    }
+
+    // Kept between launches, so the chat has numbers the moment it opens.
+    var stored: [String: Double] {
+        var d: [String: Double] = [:]
+        d["session"] = session
+        d["week"] = week
+        d["sessionReset"] = sessionReset?.timeIntervalSince1970
+        d["weekReset"] = weekReset?.timeIntervalSince1970
+        return d
+    }
+
+    init(stored d: [String: Double]) {
+        session = d["session"]
+        week = d["week"]
+        sessionReset = d["sessionReset"].map { Date(timeIntervalSince1970: $0) }
+        weekReset = d["weekReset"].map { Date(timeIntervalSince1970: $0) }
+    }
 }
 
 /// A conversation with Claude through the user's own Claude Code, on their subscription login.
@@ -139,17 +185,11 @@ final class ClaudeChat {
 
     // MARK: - The process
 
-    private func ensureProcess() -> Bool {
-        if process?.isRunning == true { return true }
-        guard let binary = Self.locate(custom: binaryOverride()) else {
-            onEvent?(.failed(tr("Не нашёл Claude Code. Установи его или укажи путь в настройках.", "Claude Code not found. Install it or set its path in Settings.")))
-            return false
-        }
+    /// Claude Code, set up to run on the subscription login in the chat's own empty folder.
+    static func command(_ binary: URL, _ arguments: [String]) -> Process {
         let p = Process()
         p.executableURL = binary
-        p.arguments = ["-p", "--input-format", "stream-json", "--output-format", "stream-json",
-                       "--include-partial-messages", "--verbose", "--tools", "", "--safe-mode",
-                       "--no-session-persistence", "--system-prompt", Self.rules]
+        p.arguments = arguments
         p.currentDirectoryURL = Paths.folder("Chat")
         var env = ProcessInfo.processInfo.environment
         // Any of these would quietly switch Claude Code from the subscription to paid API access.
@@ -158,6 +198,18 @@ final class ClaudeChat {
         }
         env["PATH"] = (env["PATH"] ?? "") + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
         p.environment = env
+        return p
+    }
+
+    private func ensureProcess() -> Bool {
+        if process?.isRunning == true { return true }
+        guard let binary = Self.locate(custom: binaryOverride()) else {
+            onEvent?(.failed(tr("Не нашёл Claude Code. Установи его или укажи путь в настройках.", "Claude Code not found. Install it or set its path in Settings.")))
+            return false
+        }
+        let p = Self.command(binary, ["-p", "--input-format", "stream-json", "--output-format", "stream-json",
+                                      "--include-partial-messages", "--verbose", "--tools", "", "--safe-mode",
+                                      "--no-session-persistence", "--system-prompt", Self.rules])
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         p.standardInput = stdin
         p.standardOutput = stdout
@@ -215,17 +267,7 @@ final class ClaudeChat {
             reply += piece
             onEvent?(.partial(reply))
         case "rate_limit_event":
-            guard let info = e["rate_limit_info"] as? [String: Any], let windows = info["unifiedWindows"] as? [String: Any] else { return }
-            var limits = PlanLimits()
-            if let s = windows["five_hour"] as? [String: Any] {
-                limits.session = (s["utilization"] as? Double).map { $0 * 100 }
-                limits.sessionReset = (s["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0) }
-            }
-            if let w = windows["seven_day"] as? [String: Any] {
-                limits.week = (w["utilization"] as? Double).map { $0 * 100 }
-                limits.weekReset = (w["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0) }
-            }
-            onEvent?(.limits(limits))
+            if let limits = PlanLimits(event: e) { onEvent?(.limits(limits)) }
         case "result":
             guard replying else { return }
             replying = false

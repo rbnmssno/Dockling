@@ -19,6 +19,19 @@ final class Integrations {
         self.app = app
     }
 
+    /// With the setting on, the limits are asked for shortly after anything Claude Code does and every
+    /// ten minutes while it works, so the warnings at 85% and 98% come without the chat.
+    private let limitsCheck = OneShot()
+
+    private func watchLimits(after delay: TimeInterval) {
+        guard app.prefs.watchLimits else { return }
+        limitsCheck.schedule(after: delay) { [weak self] in
+            guard let self, self.app.prefs.watchLimits else { return }
+            self.app.chat.refreshLimits(ifOlderThan: 240)
+            if self.app.brain.claude != .none { self.watchLimits(after: 600) }
+        }
+    }
+
     /// The pet went out of sight: Claude Code's open permission questions go to its own dialog.
     func releaseClaudeQuestions() {
         watcher?.releasePending()
@@ -30,8 +43,12 @@ final class Integrations {
         let watcher = ClaudeCodeWatcher(brain: brain)
         watcher.canAsk = { [unowned app] in app.petVisible }
         self.watcher = watcher
-        hookServer.onEvent = { event, raw, reply in watcher.handle(event, raw, reply: reply) }
+        hookServer.onEvent = { [weak self] event, raw, reply in
+            watcher.handle(event, raw, reply: reply)
+            self?.watchLimits(after: 20)
+        }
         hookServer.start()
+        watchLimits(after: 5)
 
         // Music: Spotify and Apple Music announce every play and pause.
         music.onChange = { playing in brain.music = playing }

@@ -60,7 +60,7 @@ The chat needs [Claude Code](https://code.claude.com) installed and signed in. T
 - Walks along the Dock on its own and stops when the cursor is on it. You can pick it up and drop it.
 - Falls asleep after five minutes without mouse or keyboard input and wakes up when you're back. Waves when the Mac starts or wakes.
 - Lives where the Dock is. When the Dock moves to another display it dives after it. While a video, game or app is in full screen, it stays with the desktop: a swipe to the video carries it away, the swipe back brings it in. Reminders and meetings that came up meanwhile show when it is back.
-- Click it to chat. Your plan's session and weekly limits are at the top of the chat, and a card warns you at 85% and 98%.
+- Click it to chat. Your plan's session and weekly limits are at the top of the chat the moment it opens, before you've said anything, and a card warns you at 85% and 98%. A setting keeps them up to date while Claude Code works, so the warnings come without the chat too.
 - Drop a file or some text on it, or take a screenshot, and ask about it.
 - Hold ⌥ or the microphone button to ask by voice; the answer is read out.
 - "Remind me in 20 minutes to call Alex" in the chat sets a reminder. Reminders survive a restart.
@@ -78,6 +78,8 @@ The chat needs [Claude Code](https://code.claude.com) installed and signed in. T
 ## How it works
 
 The chat is one `claude -p` process per conversation, with JSON going in and out as a stream and every tool turned off, so the pet can only talk. It runs on your own Claude Code login. `ANTHROPIC_API_KEY` is removed from its environment so it can't switch to API billing by accident. Each message starts with the current time and today's calendar events, so it can answer questions about your day.
+
+Claude Code reports the plan's limits only together with an answer, and keeps no live copy of them an app could read (its own cache in `~/.claude.json` can be hours behind). So when the chat opens, one smallest request goes through the same Claude Code: the cheapest model, a one-word answer, no tools, about a thousand tokens. The process is ended as soon as the limits have arrived, about a second later. With "Keep an eye on the limits while Claude Code works" on in Settings, the same request goes out shortly after each thing Claude Code does and every ten minutes during a task, never more often than once in four minutes; it is off by default.
 
 Claude Code's state comes from hooks. The switch in Settings adds them to `~/.claude/settings.json`, keeps everyone else's hooks and saves a backup of the file first. The hook script hands each event to the app over a local socket. When Dockling isn't running, or the pet is out of sight, Claude Code asks for permissions in its own dialog as usual.
 
@@ -152,7 +154,7 @@ xattr -dr com.apple.quarantine /Applications/Dockling.app
 - Сам гуляет по Dock, останавливается под курсором. Его можно взять мышкой и уронить.
 - Засыпает, если пять минут не трогать мышь и клавиатуру, и просыпается, когда ты вернулся. Машет, когда Mac включается или просыпается.
 - Живёт там, где Dock. Dock переехал на другой монитор — ныряет за ним. Пока открыто видео, игра или приложение во весь экран, держится рабочего стола: смахнул на видео — уехал вместе со столом, смахнул обратно — уже на месте. Напоминания и встречи, которые пришлись на это время, покажет, когда вернётся.
-- По клику открывает чат. Сверху видны лимиты подписки за сессию и за неделю, на 85% и 98% придёт карточка.
+- По клику открывает чат. Лимиты подписки за сессию и за неделю видны сверху сразу, как только чат открылся, ещё до первого сообщения, а на 85% и 98% придёт карточка. В настройках можно включить слежение за лимитами, пока работает Claude Code: тогда карточки приходят и без чата.
 - Можно бросить на него файл или текст, сделать скриншот и спросить про них.
 - Если зажать ⌥ или кнопку микрофона, можно спросить голосом, ответ он прочитает вслух.
 - «Напомни через 20 минут позвонить» в чате ставит напоминание. Оно сохранится, даже если перезапустить Mac.

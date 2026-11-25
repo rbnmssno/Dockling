@@ -6,6 +6,7 @@ import SwiftUI
 final class ChatController {
     let model = ChatModel()
     private let claude = ClaudeChat()
+    private let probe = LimitsProbe()
     private let voice = Voice()
     private let prefs: Preferences
     private weak var brain: PetBrain?
@@ -29,6 +30,8 @@ final class ChatController {
         self.stage = stage
         claude.binaryOverride = { [weak prefs] in prefs?.claudePath ?? "" }
         claude.onEvent = { [weak self] in self?.handle($0) }
+        probe.binaryOverride = { [weak prefs] in prefs?.claudePath ?? "" }
+        model.limits = prefs.lastLimits.current
         voice.onText = { [weak self] text in self?.model.input = text }
         model.messages = [ChatMessage(role: .bot, text: tr("Привет. Я живу у тебя на Dock. Спрашивай что угодно.", "Hi. I live on your Dock. Ask me anything."))]
         model.status = ClaudeChat.locate(custom: prefs.claudePath) == nil ? ChatModel.noClaude : ChatModel.online
@@ -47,6 +50,8 @@ final class ChatController {
         model.avatar = stage.skin?.faceImage().map { NSImage(cgImage: $0, size: CGSize(width: $0.width, height: $0.height)) }
         offerClipboard()
         model.status = ClaudeChat.locate(custom: prefs.claudePath) == nil ? ChatModel.noClaude : ChatModel.online
+        // The numbers are there before the first message, and fresh.
+        refreshLimits(ifOlderThan: 90)
         restyle()
         place(over: stage, in: window)
         brain?.cards.hide()
@@ -207,8 +212,22 @@ final class ChatController {
             model.messages.append(ChatMessage(role: .note, text: text))
             finishReply()
         case .limits(let limits):
-            model.limits = limits
-            onLimits?(limits)
+            took(limits)
+        }
+    }
+
+    private func took(_ limits: PlanLimits) {
+        model.limits = limits
+        model.checkingLimits = false
+        prefs.lastLimits = limits
+        onLimits?(limits)
+    }
+
+    /// Asks Claude Code for the limits, unless they were heard within `maxAge` seconds.
+    func refreshLimits(ifOlderThan maxAge: TimeInterval) {
+        model.limits = model.limits.current
+        model.checkingLimits = probe.run(ifOlderThan: maxAge) { [weak self] limits in
+            if let limits { self?.took(limits) } else { self?.model.checkingLimits = false }
         }
     }
 
