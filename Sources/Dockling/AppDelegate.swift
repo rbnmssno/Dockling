@@ -19,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
     private var userHidden = false
     /// A full-screen app covers his screen: he steps aside, as the Dock does.
     private(set) var away = false
+    /// A full-screen app has a Space on his screen: he keeps to the desktop he is on (PetPanel).
+    private var oneDesktop = false
+    private let oneDesktopRecheck = OneShot()
     private let fullScreenCheck = OneShot()
     private let fullScreenRecheck = OneShot()
     /// Counts Space changes, so a newer one ends the quick checks of an older one.
@@ -53,8 +56,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         stage.setScale(x: prefs.scaleX, y: prefs.scaleY)
         stage.setSkin(Skin.load())
         layout(initial: true)
-        // Started while a full-screen app fills his screen: he waits for it to end.
-        if !updateAway() { petPanel.orderFrontRegardless() }
+        // Started while a full-screen app fills his screen: he waits for it to end. Started on the
+        // desktop while one has a Space of its own: he keeps to this desktop.
+        if !updateAway() {
+            petPanel.orderFrontRegardless()
+            if FullScreen.exists(on: brain.dock.screen) { setOneDesktop(true) }
+        }
         brain.settle()
         // The one greeting besides waking from sleep: when he starts with the Mac.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.brain.react("wave", duration: 1.5) }
@@ -228,6 +235,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         petPanel.orderFrontRegardless()
     }
 
+    /// A full-screen app keeps him to his desktop at once. Its end is believed only when a second look a
+    /// second later agrees: in the middle of a Space switch the window list can miss the app's window.
+    private func settleOneDesktop(_ fullScreenApp: Bool) {
+        if fullScreenApp || !oneDesktop {
+            oneDesktopRecheck.cancel()
+            setOneDesktop(fullScreenApp)
+            return
+        }
+        guard !oneDesktopRecheck.isPending else { return }
+        oneDesktopRecheck.schedule(after: 1.0) { [weak self] in
+            guard let self, !self.away, !FullScreen.exists(on: self.brain.dock.screen) else { return }
+            self.setOneDesktop(false)
+        }
+    }
+
+    private func setOneDesktop(_ one: Bool) {
+        guard one != oneDesktop else { return }
+        oneDesktop = one
+        Log.note(one ? "a full-screen app is on his screen: keeping to this desktop" : "no full-screen app left: on every desktop again")
+        petPanel.keepToOneDesktop(one)
+    }
+
     // MARK: - Full screen
 
     /// macOS reports a Space change once the switch is over, and the window list shows a full-screen
@@ -239,7 +268,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         let wasAway = away
         func look(_ n: Int) {
             guard mine == spaceChanges else { return }
-            if updateAway() != wasAway || n == 0 { return }
+            let nowAway = updateAway()
+            if nowAway != wasAway { return }
+            if n == 0 {
+                // Settled on another desktop: kept to one desktop, he follows. Not earlier, because in
+                // the middle of a switch to a full-screen app this would carry him onto it.
+                if !nowAway, oneDesktop, !petPanel.isOnActiveSpace { showPet() }
+                return
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { look(n - 1) }
         }
         look(30)
@@ -256,15 +292,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
     private func updateAway() -> Bool {
         guard DevTools.showcase == nil else { return false }
         let covered = FullScreen.covers(brain.dock.screen)
-        Log.debug("full-screen check on \(brain.dock.screen): \(covered ? "covered" : "clear")")
-        guard covered != away else { return away }
+        let fullScreenApp = covered || FullScreen.exists(on: brain.dock.screen)
+        Log.debug("full-screen check on \(brain.dock.screen): \(covered ? "covered" : "clear"), full-screen app \(fullScreenApp)")
+        guard covered != away else {
+            // The full-screen app was closed from another Space. Taking on one desktop waits for a calm
+            // moment (below): in the middle of a switch to a full-screen app the window list already has
+            // its window but does not yet show it covering, and he would stick to that Space.
+            if !away && !fullScreenApp { settleOneDesktop(false) }
+            return away
+        }
         away = covered
         if covered {
             Log.note("full screen on his screen: stepping aside")
             brain.stepAside()
-            putAway()
+            chat.close()
+            integrations?.releaseClaudeQuestions()
+            // Kept to his desktop he is not on this Space and comes back with the desktop on the next
+            // swipe. Otherwise (on every Space, or caught here) he leaves the screen until then.
+            if !oneDesktop || petPanel.isOnActiveSpace { petPanel.orderOut(nil) }
+            setOneDesktop(true)
         } else {
             Log.note("full screen ended: back on the Dock")
+            settleOneDesktop(fullScreenApp)
             layout()
             showPet()
             brain.comeBack()
@@ -291,7 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         }
     }
 
-    var petVisible: Bool { petPanel.isVisible }
+    var petVisible: Bool { petPanel.isVisible && !away }
 
     // MARK: - Reminders
 

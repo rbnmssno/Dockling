@@ -18,6 +18,13 @@ final class PetPanel: NSPanel {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// On every Space, or (while a full-screen app has a Space on his screen) only on the desktop he
+    /// is on: a swipe to the full-screen app then carries him away with the desktop, and ordering him
+    /// in brings him to whichever desktop is shown.
+    func keepToOneDesktop(_ one: Bool) {
+        collectionBehavior = one ? [.moveToActiveSpace, .stationary, .ignoresCycle] : [.canJoinAllSpaces, .stationary, .ignoresCycle]
+    }
 }
 
 protocol PetStageDelegate: AnyObject {

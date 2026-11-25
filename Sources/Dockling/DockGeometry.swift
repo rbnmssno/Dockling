@@ -24,12 +24,14 @@ enum DockGeometry {
         if let stage = Showcase.stage { return stage }
         let screens = NSScreen.screens
         let dock = UserDefaults(suiteName: "com.apple.dock")
-        // The Dock's screen is the one whose usable area is cut at the bottom. When no screen shows that
-        // (yet), the display holding the Dock's own screen-sized window decides.
+        // The Dock's screen is the display holding the Dock's own screen-sized window. The screens'
+        // usable areas can keep the Dock's cut on the old display after the Dock moved, so they only
+        // decide when the window has never been seen. While a full-screen app hides the Dock its
+        // window is gone; the display it was last seen on still counts.
         let bottomInset = { (s: NSScreen) in s.visibleFrame.minY - s.frame.minY }
         let byInset = screens.filter { bottomInset($0) > 20 }.max(by: { bottomInset($0) < bottomInset($1) })
-        let byWindow = byInset == nil ? dockDisplay().flatMap { id in screens.first { $0.displayID == id } } : nil
-        let dockScreen = byInset ?? byWindow ?? NSScreen.main ?? screens[0]
+        let byWindow = (dockDisplay() ?? lastDockDisplay).flatMap { id in screens.first { $0.displayID == id } }
+        let dockScreen = byWindow ?? byInset ?? NSScreen.main ?? screens[0]
         let frame = dockScreen.frame
         var inset = bottomInset(dockScreen)
         let orientation = dock?.string(forKey: "orientation") ?? "bottom"
@@ -62,10 +64,18 @@ enum DockGeometry {
     // MARK: - Which display the Dock is on
 
     private static var dockWindowID: CGWindowID?
+    /// Where the Dock's window was last seen, for the moments it is gone (a full-screen app).
+    private static var lastDockDisplay: CGDirectDisplayID?
 
     /// The display that holds the Dock's own screen-sized window (layer 20). Looking up one known window
     /// is cheap, so this can run every couple of seconds.
     static func dockDisplay() -> CGDirectDisplayID? {
+        let found = findDockDisplay()
+        if let found { lastDockDisplay = found }
+        return found
+    }
+
+    private static func findDockDisplay() -> CGDirectDisplayID? {
         if let id = dockWindowID, let bounds = bounds(of: id) { return display(containing: bounds) }
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
         for w in list where (w[kCGWindowOwnerName as String] as? String) == "Dock" && (w[kCGWindowLayer as String] as? Int) == 20 {
