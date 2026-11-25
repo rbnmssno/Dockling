@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
     private(set) var away = false
     private let fullScreenCheck = OneShot()
     private let fullScreenRecheck = OneShot()
+    /// Counts Space changes, so a newer one ends the quick checks of an older one.
+    private var spaceChanges = 0
     private var appearanceWatch: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -93,7 +95,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         }
         brain.dock = dock
         let height = min(dock.screen.height, dock.floorY - dock.screen.minY + 480)
-        petPanel.setFrame(CGRect(x: dock.screen.minX, y: dock.screen.minY, width: dock.screen.width, height: height), display: false)
+        let strip = CGRect(x: dock.screen.minX, y: dock.screen.minY, width: dock.screen.width, height: height)
+        // Left alone when nothing changed: touching the window can bring it onto a full-screen Space.
+        if petPanel.frame != strip { petPanel.setFrame(strip, display: false) }
         stage.frame = petPanel.contentView?.bounds ?? .zero
         stage.setFloor(dock.floorY - dock.screen.minY)
         if initial {
@@ -152,10 +156,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
             ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.scheduleLayout() }
         }
-        // Going full screen opens a Space of its own; a game can also cover the screen when it starts.
-        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
-            ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.scheduleFullScreenCheck() }
-        }
+        // Going full screen, or swiping to a full-screen app, changes the Space; a game can also cover
+        // the screen when it starts.
+        ws.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.spaceChanged() }
+        ws.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in self?.scheduleFullScreenCheck() }
         prefs.$scaleX.combineLatest(prefs.$scaleY).dropFirst().sink { [weak self] x, y in
             guard let self else { return }
             self.stage.setScale(x: x, y: y)
@@ -225,7 +229,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
 
     // MARK: - Full screen
 
-    /// Space changes come before the window list settles, so it is looked at twice.
+    /// macOS reports a Space change once the switch is over, and the window list shows a full-screen
+    /// app about 0.2 s later. So it is looked at every 50 ms for up to 1.5 s, and he is gone as soon as
+    /// it shows; going back to the desktop brings him back at once.
+    private func spaceChanged() {
+        spaceChanges += 1
+        let mine = spaceChanges
+        let wasAway = away
+        func look(_ n: Int) {
+            guard mine == spaceChanges else { return }
+            if updateAway() != wasAway || n == 0 { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { look(n - 1) }
+        }
+        look(30)
+    }
+
+    /// An app came to the front: it may fill the screen without a Space of its own (some games).
     private func scheduleFullScreenCheck() {
         fullScreenCheck.schedule(after: 0.3) { [weak self] in _ = self?.updateAway() }
         fullScreenRecheck.schedule(after: 1.2) { [weak self] in _ = self?.updateAway() }
