@@ -59,6 +59,7 @@ The chat needs [Claude Code](https://code.claude.com) installed and signed in. T
 
 - Walks along the Dock on its own and stops when the cursor is on it. You can pick it up and drop it.
 - Falls asleep after five minutes without mouse or keyboard input and wakes up when you're back. Waves when the Mac starts or wakes.
+- Steps aside while a video, game or app is in full screen on its screen, as the Dock does, and comes back after. Reminders and meetings that came up meanwhile show then.
 - Click it to chat. Your plan's session and weekly limits are at the top of the chat, and a card warns you at 85% and 98%.
 - Drop a file or some text on it, or take a screenshot, and ask about it.
 - Hold ⌥ or the microphone button to ask by voice; the answer is read out.
@@ -78,7 +79,7 @@ The chat needs [Claude Code](https://code.claude.com) installed and signed in. T
 
 The chat is one `claude -p` process per conversation, with JSON going in and out as a stream and every tool turned off, so the pet can only talk. It runs on your own Claude Code login. `ANTHROPIC_API_KEY` is removed from its environment so it can't switch to API billing by accident. Each message starts with the current time and today's calendar events, so it can answer questions about your day.
 
-Claude Code's state comes from hooks. The switch in Settings adds them to `~/.claude/settings.json`, keeps everyone else's hooks and saves a backup of the file first. The hook script hands each event to the app over a local socket. When Dockling isn't running the script exits quietly, and Claude Code asks for permissions in its own dialog as usual.
+Claude Code's state comes from hooks. The switch in Settings adds them to `~/.claude/settings.json`, keeps everyone else's hooks and saves a backup of the file first. The hook script hands each event to the app over a local socket. When Dockling isn't running, or the pet is out of sight, Claude Code asks for permissions in its own dialog as usual.
 
 Every animation is a row of the sprite sheet played by Core Animation. The window server draws the frames, so the app does no work while he walks or sleeps.
 
@@ -145,6 +146,7 @@ xattr -dr com.apple.quarantine /Applications/Dockling.app
 
 - Сам гуляет по Dock, останавливается под курсором. Его можно взять мышкой и уронить.
 - Засыпает, если пять минут не трогать мышь и клавиатуру, и просыпается, когда ты вернулся. Машет, когда Mac включается или просыпается.
+- Уходит, пока на его экране видео, игра или приложение во весь экран, как и сам Dock, и возвращается после. Напоминания и встречи, которые пришлись на это время, покажет тогда.
 - По клику открывает чат. Сверху видны лимиты подписки за сессию и за неделю, на 85% и 98% придёт карточка.
 - Можно бросить на него файл или текст, сделать скриншот и спросить про них.
 - Если зажать ⌥ или кнопку микрофона, можно спросить голосом, ответ он прочитает вслух.

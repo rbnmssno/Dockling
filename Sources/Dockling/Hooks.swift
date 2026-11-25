@@ -173,8 +173,23 @@ final class ClaudeCodeWatcher {
     private var sessions: [String: Session] = [:]
     private var pending: [(id: String, tool: String, detail: String, reply: (Data?) -> Void)] = []
 
+    /// Whether a card can be put in front of the user now. When the pet is out of sight, Claude Code
+    /// asks in its own dialog instead, so it never waits on a card nobody sees.
+    var canAsk: () -> Bool = { true }
+
     init(brain: PetBrain) {
         self.brain = brain
+    }
+
+    /// The pet went out of sight: every open question goes back to Claude Code's own dialog.
+    func releasePending() {
+        guard !pending.isEmpty else { return }
+        for item in pending {
+            item.reply(nil)
+            sessions[item.id]?.state = .work
+        }
+        pending.removeAll()
+        refresh()
     }
 
     func handle(_ event: String, _ raw: [String: Any], reply: ((Data?) -> Void)?) {
@@ -190,6 +205,12 @@ final class ClaudeCodeWatcher {
             sessions[id]?.since = Date()
         case "PermissionRequest":
             guard let reply else { return }
+            guard canAsk() else {
+                Log.note("pet out of sight: Claude Code asks in its own dialog")
+                reply(nil)
+                sessions[id]?.state = .work
+                break
+            }
             sessions[id]?.state = .permission
             let tool = raw["tool_name"] as? String ?? "?"
             let input = raw["tool_input"] as? [String: Any] ?? [:]

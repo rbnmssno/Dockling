@@ -19,10 +19,16 @@ final class Integrations {
         self.app = app
     }
 
+    /// The pet went out of sight: Claude Code's open permission questions go to its own dialog.
+    func releaseClaudeQuestions() {
+        watcher?.releasePending()
+    }
+
     func start() {
         let brain = app.brain!
         // Claude Code, through the hooks the user switched on in Settings.
         let watcher = ClaudeCodeWatcher(brain: brain)
+        watcher.canAsk = { [unowned app] in app.petVisible }
         self.watcher = watcher
         hookServer.onEvent = { event, raw, reply in watcher.handle(event, raw, reply: reply) }
         hookServer.start()

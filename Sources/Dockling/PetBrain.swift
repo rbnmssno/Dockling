@@ -41,6 +41,9 @@ final class PetBrain: PetStageDelegate {
         }
     }
     private var sadUntil = Date.distantPast
+    /// A full-screen app covers his screen: no strolls, and cards that call for attention wait.
+    private(set) var away = false
+    private var missed: [(card: Card, at: Date)] = []
 
     private enum Movement { case none, walking, held, falling }
     private var movement = Movement.none
@@ -303,9 +306,9 @@ final class PetBrain: PetStageDelegate {
         if recoverIfStuck() { settle() }
         let again = { [weak self] in self?.scheduleStroll() }
         // Not while the cursor rests on him: he would only run off from under it.
-        guard prefs.strolls, !DevTools.scripted, isCalm, skin != nil, !stage.mouseIsOver, let window = stage.window else {
-            // Walking reschedules on arrival, waking up restarts strolls.
-            if movement != .walking && !asleep { again() }
+        guard prefs.strolls, !DevTools.scripted, !away, isCalm, skin != nil, !stage.mouseIsOver, let window = stage.window else {
+            // Walking reschedules on arrival, waking up and coming back from full screen restart strolls.
+            if movement != .walking && !asleep && !away { again() }
             return
         }
         let half = stage.spriteSize.width / 2
@@ -346,6 +349,29 @@ final class PetBrain: PetStageDelegate {
         }
     }
 
+    /// A full-screen app took his screen.
+    func stepAside() {
+        away = true
+        strollTimer.cancel()
+        stopWalking()
+        cards.hide()
+    }
+
+    /// The full-screen app is gone: strolls go on, and missed reminders and meetings still due show up.
+    func comeBack() {
+        guard away else { return }
+        away = false
+        scheduleStroll()
+        let now = Date()
+        let due = missed.filter { $0.card.tag != "meeting" || now.timeIntervalSince($0.at) < 600 }.map(\.card)
+        missed.removeAll()
+        var delay = 0.8
+        for card in due {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.notify(card) }
+            delay += card.duration + 0.6
+        }
+    }
+
     /// Stops a walk where he is now; he stands in the steady state.
     func stopWalking() {
         guard movement == .walking else { return }
@@ -382,6 +408,11 @@ final class PetBrain: PetStageDelegate {
 
     /// Shows a card, or puts it into the chat while the chat is open.
     func notify(_ card: Card) {
+        if away {
+            // Reminders and meetings come back when he does; everything else would be stale.
+            if card.call { missed.append((card, Date())) }
+            return
+        }
         if host?.isChatOpen == true {
             host?.chatNote(card)
             return

@@ -15,6 +15,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
     private var bag = Set<AnyCancellable>()
     private let relayout = OneShot()
     private let comeBack = OneShot()
+    /// Hidden from the menu ("Hide for 10 Minutes", or the menu bar icon).
+    private var userHidden = false
+    /// A full-screen app covers his screen: he steps aside, as the Dock does.
+    private(set) var away = false
+    private let fullScreenCheck = OneShot()
+    private let fullScreenRecheck = OneShot()
     private var appearanceWatch: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -74,6 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
 
     /// Puts the strip over the Dock's screen and the character on the Dock.
     func layout(initial: Bool = false) {
+        // In full screen the Dock is hidden and the screen's areas change; he keeps his place meanwhile.
+        if !initial, updateAway() { return }
         let old = brain.dock
         let dock = DockGeometry.current()
         let movedScreen = !initial && old.screen != dock.screen
@@ -144,6 +152,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
             ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.scheduleLayout() }
         }
+        // Going full screen opens a Space of its own; a game can also cover the screen when it starts.
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
+            ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.scheduleFullScreenCheck() }
+        }
         prefs.$scaleX.combineLatest(prefs.$scaleY).dropFirst().sink { [weak self] x, y in
             guard let self else { return }
             self.stage.setScale(x: x, y: y)
@@ -189,13 +201,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
     }
 
     private func togglePet() {
-        if petPanel.isVisible {
-            chat.close()
-            petPanel.orderOut(nil)
-        } else {
+        if userHidden {
+            userHidden = false
             comeBack.cancel()
-            petPanel.orderFrontRegardless()
+            showPet()
+        } else {
+            userHidden = true
+            putAway()
         }
+    }
+
+    /// Out of sight: the chat closes, and Claude Code asks its open questions in its own dialog.
+    private func putAway() {
+        chat.close()
+        integrations?.releaseClaudeQuestions()
+        petPanel.orderOut(nil)
+    }
+
+    private func showPet() {
+        guard !userHidden, !away else { return }
+        petPanel.orderFrontRegardless()
+    }
+
+    // MARK: - Full screen
+
+    /// Space changes come before the window list settles, so it is looked at twice.
+    private func scheduleFullScreenCheck() {
+        fullScreenCheck.schedule(after: 0.3) { [weak self] in _ = self?.updateAway() }
+        fullScreenRecheck.schedule(after: 1.2) { [weak self] in _ = self?.updateAway() }
+    }
+
+    /// Steps aside while a full-screen app covers his screen and comes back after; returns `away`.
+    @discardableResult
+    private func updateAway() -> Bool {
+        guard DevTools.showcase == nil else { return false }
+        let covered = FullScreen.covers(brain.dock.screen)
+        Log.debug("full-screen check on \(brain.dock.screen): \(covered ? "covered" : "clear")")
+        guard covered != away else { return away }
+        away = covered
+        if covered {
+            Log.note("full screen on his screen: stepping aside")
+            brain.stepAside()
+            putAway()
+        } else {
+            Log.note("full screen ended: back on the Dock")
+            layout()
+            showPet()
+            brain.comeBack()
+        }
+        return away
     }
 
     // MARK: - PetHost
@@ -209,9 +263,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
     func petMoved(fallDuration: TimeInterval) { chat.follow(fallDuration: fallDuration) }
 
     func hidePetForAWhile() {
-        chat.close()
-        petPanel.orderOut(nil)
-        comeBack.schedule(after: 600) { [weak self] in self?.petPanel.orderFrontRegardless() }
+        userHidden = true
+        putAway()
+        comeBack.schedule(after: 600) { [weak self] in
+            self?.userHidden = false
+            self?.showPet()
+        }
     }
 
     var petVisible: Bool { petPanel.isVisible }
