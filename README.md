@@ -1,10 +1,31 @@
-# Dockling
+<p align="center">
+  <img src="docs/icon.png" width="128" height="128" alt="Dockling icon">
+</p>
 
-A pixel pet that lives on the Mac's Dock. Click it and a small chat with Claude opens. It also keeps an eye on Claude Code: it sits down at a laptop while Claude works, brings you permission requests and tells you when a task is done.
+<h1 align="center">Dockling</h1>
 
-[![Build](https://github.com/rbnmssno/Dockling/actions/workflows/build.yml/badge.svg)](https://github.com/rbnmssno/Dockling/actions/workflows/build.yml) · [Русская версия](#по-русски)
+<p align="center">
+  A pixel pet that lives on the Mac's Dock, chats with Claude and keeps an eye on Claude Code.
+</p>
 
-![Dockling walking along the Dock, working, finishing a task, being carried and opening the chat](docs/demo.gif)
+<p align="center">
+  <a href="https://github.com/rbnmssno/Dockling/releases/latest"><img src="https://img.shields.io/github/v/release/rbnmssno/Dockling?label=release&color=8b76ec" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white" alt="macOS 14 or later">
+  <a href="https://github.com/rbnmssno/Dockling/actions/workflows/build.yml"><img src="https://github.com/rbnmssno/Dockling/actions/workflows/build.yml/badge.svg" alt="Build"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/rbnmssno/Dockling?color=555555" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/rbnmssno/Dockling/releases/latest/download/Dockling.dmg"><b>Download Dockling.dmg</b></a>
+  &nbsp;·&nbsp;
+  <a href="#по-русски">Русская версия</a>
+</p>
+
+<p align="center">
+  <img src="docs/demo.gif" width="640" alt="Dockling walking along the Dock, working while Claude Code runs, being carried and opening the chat">
+</p>
+
+Click the pet and a small chat with Claude opens. While Claude Code works, it sits down at a laptop; it brings you permission requests with Allow and Deny, and tells you when a task is done.
 
 It costs next to nothing to keep around: 0% CPU while it stands or sleeps, and about 15 MB of memory.
 
@@ -18,7 +39,7 @@ It costs next to nothing to keep around: 0% CPU while it stands or sleeps, and a
 
 ## Download
 
-[Dockling.dmg](https://github.com/rbnmssno/Dockling/releases/latest/download/Dockling.dmg) for macOS 14 or later on Apple silicon. The glass looks its best on macOS 26. The interface is in Russian.
+[Dockling.dmg](https://github.com/rbnmssno/Dockling/releases/latest/download/Dockling.dmg) for macOS 14 or later on Apple silicon. The glass looks its best on macOS 26.
 
 The first launch needs to be allowed by hand once:
 
@@ -41,14 +62,17 @@ The chat needs [Claude Code](https://code.claude.com) installed and signed in. T
 - Click it to chat. Your plan's session and weekly limits are at the top of the chat, and a card warns you at 85% and 98%.
 - Drop a file or some text on it, or take a screenshot, and ask about it.
 - Hold ⌥ or the microphone button to ask by voice; the answer is read out.
-- "Напомни через 20 минут позвонить" in the chat sets a reminder. Reminders survive a restart.
+- "Remind me in 20 minutes to call Alex" in the chat sets a reminder. Reminders survive a restart.
 - Meetings from the Calendar app, Google accounts included: a card ten minutes before.
 - Claude Code: a working animation, permission requests with Allow and Deny, a one-line summary when a task ends, and a number over its head when several sessions run.
 - Reacts to the charger, low battery and music in Spotify or Apple Music.
-- Two Services items for selected text in any app: ask it, or translate.
+- Two Services items for selected text in any app: Ask the Ghost, and Translate with the Ghost.
 - Light, dark or automatic theme, and glass from solid to fully clear.
+- English or Russian, following the system language.
 
-![Settings](docs/settings.png)
+<p align="center">
+  <img src="docs/settings.png" width="460" alt="Settings">
+</p>
 
 ## How it works
 
@@ -68,19 +92,20 @@ You need Xcode 26 (it compiles the icon) or the Command Line Tools with Swift 5.
 scripts/build.sh
 ```
 
-This makes `dist/Dockling.app` and `dist/Dockling.dmg`. A copy you build yourself opens without the Gatekeeper step.
+This makes `dist/Dockling.app` and `dist/Dockling.dmg`. A copy you build yourself opens without the Gatekeeper step. Release disk images are built by GitHub Actions from the tagged source.
 
 Each build is signed ad hoc, which makes macOS ask for the calendar and microphone again after every rebuild. Run `scripts/make-signing-identity.sh` once to avoid that: it creates a self-signed certificate in a keychain of its own inside the project (`signing/`, ignored by git), and the build uses it from then on.
 
 Development switches:
 
 ```
-Dockling --log                 # print what happens
-Dockling --demo walk           # also: chat, cards, sleep, work, settings
-Dockling --showcase DIR        # the pictures and the GIF above, recorded over a backdrop of its own
+Dockling --log                       # print what happens
+Dockling --isolated                  # a test copy beside your own Dockling, with its own settings and data
+Dockling --demo walk                 # also: chat, cards, sleep, work, settings
+Dockling --isolated --showcase DIR   # the pictures and the animation above, on a stage of its own
 ```
 
-The binary is `dist/Dockling.app/Contents/MacOS/Dockling`.
+Add `-AppleLanguages '(en)'` or `'(ru)'` to run in one language. The binary is `dist/Dockling.app/Contents/MacOS/Dockling`.
 
 ## Uninstalling
 
@@ -94,7 +119,7 @@ The pixel font, Ghost Pixel, is [Pixelify Sans](https://github.com/eifetx/Pixeli
 
 ## По-русски
 
-Dockling — пиксельный питомец, который живёт на Dock. Кликни по нему, и откроется маленький чат с Claude. Ещё он следит за Claude Code: садится за ноутбук, пока Claude работает, приносит запросы на разрешения и говорит, когда задача готова. Интерфейс на русском.
+Dockling — пиксельный питомец, который живёт на Dock. Кликни по нему, и откроется маленький чат с Claude. Ещё он следит за Claude Code: садится за ноутбук, пока Claude работает, приносит запросы на разрешения и говорит, когда задача готова. Интерфейс на русском или английском, по языку системы.
 
 Ресурсов почти не тратит: 0% процессора, пока стоит или спит, и около 15 МБ памяти.
 

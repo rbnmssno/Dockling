@@ -1,0 +1,45 @@
+name: Bug report
+description: Something in Dockling doesn't work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Можно писать по-русски.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. A screenshot or a short screen recording helps a lot.
+    validations:
+      required: true
+  - type: input
+    id: dockling
+    attributes:
+      label: Dockling version
+      description: Select Dockling in Applications and choose File → Get Info.
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "macOS 26.1"
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+      description: "`claude --version`, or the version of the VS Code extension."
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Walking, sleeping, animations
+        - Chat
+        - Claude Code cards and hooks
+        - Calendar, reminders, screenshots
+        - Settings
+        - Something else
