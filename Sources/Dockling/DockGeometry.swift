@@ -24,7 +24,7 @@ enum DockGeometry {
         if let stage = Showcase.stage { return stage }
         let screens = NSScreen.screens
         // Development: `--dock-display main|external` puts his Dock on that display.
-        if let which = DevTools.value(after: "--dock-display"),
+        if let which = devDisplay,
            let s = which == "main" ? screens.first : screens.first(where: { $0 != screens.first }) {
             let tile = CGFloat(UserDefaults(suiteName: "com.apple.dock")?.double(forKey: "tilesize") ?? 0)
             let width = estimatedWidth(dock: UserDefaults(suiteName: "com.apple.dock"), orientation: "bottom")
@@ -71,6 +71,17 @@ enum DockGeometry {
     }
 
     // MARK: - Which display the Dock is on
+
+    /// The display the Dock is on right now, when that can be seen: the display showing the Dock's
+    /// window (or the development override). Nil while a full-screen app hides the Dock.
+    static func visibleDockScreen() -> CGRect? {
+        let screens = NSScreen.screens
+        if let which = devDisplay { return (which == "main" ? screens.first : screens.first { $0 != screens.first })?.frame }
+        return dockDisplay().flatMap { id in screens.first { $0.displayID == id }?.frame }
+    }
+
+    /// Development: his Dock's display, `main` or `external` (`--dock-display`, or changed while running).
+    static var devDisplay = DevTools.value(after: "--dock-display")
 
     private static var dockWindowID: CGWindowID?
     /// Where the Dock's window was last seen, for the moments it is gone (a full-screen app).

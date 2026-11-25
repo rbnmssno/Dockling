@@ -53,6 +53,7 @@ final class PetStage: NSView {
     private var hoverArea: NSTrackingArea?
     private var press: (start: NSPoint, origin: CGPoint, dragging: Bool)?
     private let walkEnd = OneShot()
+    private let glideEnd = OneShot()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -279,7 +280,8 @@ final class PetStage: NSView {
         a.timingFunction = CAMediaTimingFunction(name: .easeIn)
         sprite.add(a, forKey: "dive")
         Log.debug("dive from \(Int(from))")
-        walkEnd.schedule(after: a.duration) { completion() }
+        // Its own timer: a walk or a snap to the Dock meanwhile must not lose the way to the new Dock.
+        glideEnd.schedule(after: a.duration) { completion() }
     }
 
     /// The Dock came to this screen: he comes up from below its edge onto the Dock at `x`.
@@ -293,7 +295,7 @@ final class PetStage: NSView {
         a.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.25, 1)
         sprite.add(a, forKey: "surface")
         Log.debug("surface at \(Int(x))")
-        walkEnd.schedule(after: a.duration) { [weak self] in self?.updateHoverArea() }
+        glideEnd.schedule(after: a.duration) { [weak self] in self?.updateHoverArea() }
     }
 
     func stopMoving() {

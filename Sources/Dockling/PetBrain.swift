@@ -379,6 +379,8 @@ final class PetBrain: PetStageDelegate {
         movement = .none
         act = nil
         settle()
+        // The walk's own ending would have planned the next stroll; an interrupted one has to.
+        if !away { scheduleStroll() }
     }
 
     /// Keeps him on the Dock after the Dock or the screen changed.
