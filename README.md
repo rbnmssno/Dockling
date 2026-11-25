@@ -85,6 +85,8 @@ Every animation is a row of the sprite sheet played by Core Animation. The windo
 
 macOS doesn't tell apps where the Dock is, so its width is worked out from the Dock's own settings: icon size, pinned apps and the apps that are running.
 
+He belongs to a desktop the way a window does, so macOS itself carries him off the screen with the desktop when you swipe to a full-screen app, and brings him back with it; nothing is hidden or shown by a timer. Whether a display is showing a desktop or a full-screen Space is asked from the window server (`CGSCopyManagedDisplaySpaces`, the call window managers use, as there is no public one). If a future macOS drops it, a window that covers the whole screen counts as full screen instead.
+
 ## Building
 
 You need Xcode 26 (it compiles the icon) or the Command Line Tools with Swift 5.9 or later.

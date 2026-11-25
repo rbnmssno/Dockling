@@ -10,7 +10,10 @@ final class PetPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = false
         level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        // He belongs to one desktop, like any window: a swipe to a full-screen app carries him away with
+        // the desktop and the swipe back brings him in, with nothing to hide or show. Ordering him in
+        // on another desktop moves him there.
+        collectionBehavior = [.moveToActiveSpace, .stationary, .ignoresCycle]
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         isMovable = false
@@ -18,13 +21,6 @@ final class PetPanel: NSPanel {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
-
-    /// On every Space, or (while a full-screen app has a Space on his screen) only on the desktop he
-    /// is on: a swipe to the full-screen app then carries him away with the desktop, and ordering him
-    /// in brings him to whichever desktop is shown.
-    func keepToOneDesktop(_ one: Bool) {
-        collectionBehavior = one ? [.moveToActiveSpace, .stationary, .ignoresCycle] : [.canJoinAllSpaces, .stationary, .ignoresCycle]
-    }
 }
 
 protocol PetStageDelegate: AnyObject {
@@ -267,6 +263,8 @@ final class PetStage: NSView {
     }
 
     /// Freezes the character where it is now on screen.
+    var isDiving: Bool { sprite.animation(forKey: "dive") != nil }
+
     /// The Dock left this screen: he goes down below its edge after it, then `completion` runs.
     func dive(completion: @escaping () -> Void) {
         stopMoving()

@@ -17,15 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
     private let comeBack = OneShot()
     /// Hidden from the menu ("Hide for 10 Minutes", or the menu bar icon).
     private var userHidden = false
-    /// A full-screen app covers his screen: he steps aside, as the Dock does.
+    /// A full-screen Space is showing on his screen: he is out of sight on his desktop, as the Dock is.
     private(set) var away = false
-    /// A full-screen app has a Space on his screen: he keeps to the desktop he is on (PetPanel).
-    private var oneDesktop = false
-    private let oneDesktopRecheck = OneShot()
-    private let fullScreenCheck = OneShot()
-    private let fullScreenRecheck = OneShot()
-    /// Counts Space changes, so a newer one ends the quick checks of an older one.
-    private var spaceChanges = 0
     private var appearanceWatch: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -55,13 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
 
         stage.setScale(x: prefs.scaleX, y: prefs.scaleY)
         stage.setSkin(Skin.load())
-        layout(initial: true)
-        // Started while a full-screen app fills his screen: he waits for it to end. Started on the
-        // desktop while one has a Space of its own: he keeps to this desktop.
-        if !updateAway() {
-            petPanel.orderFrontRegardless()
-            if FullScreen.exists(on: brain.dock.screen) { setOneDesktop(true) }
-        }
+        refresh(initial: true)
         brain.settle()
         // The one greeting besides waking from sleep: when he starts with the Mac.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.brain.react("wave", duration: 1.5) }
@@ -86,77 +73,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         return false
     }
 
-    // MARK: - Layout
+    // MARK: - Where he is
 
-    /// Puts the strip over the Dock's screen and the character on the Dock. When the Dock went to
-    /// another display he follows it: down below the edge here, up from below the edge there.
-    func layout(initial: Bool = false) {
-        // In full screen the Dock is hidden and the screen's areas change; he keeps his place meanwhile.
-        if !initial, updateAway() { return }
-        guard !following else { return }
+    /// The one place that decides where he is: on the Dock's display, on the desktop it shows.
+    ///
+    /// He belongs to a desktop like any window (see `PetPanel`), so swipes to a full-screen app and
+    /// back carry him with the desktop, and nothing here hides or shows him for that. What is left:
+    /// while a full-screen Space shows on his screen he is "away" (no strolls, cards wait, Claude Code
+    /// asks in its own dialog); when a desktop shows he stands on the Dock there, brought over if he
+    /// was on another desktop; when the Dock went to another display he dives below the edge and
+    /// comes up on the Dock there.
+    func refresh(initial: Bool = false) {
         let old = brain.dock
         let dock = DockGeometry.current()
-        let movedScreen = !initial && old.screen != dock.screen
-        // Where along the Dock he stood, from 0 at its left end to 1 at its right end.
-        let along = old.maxX > old.minX ? ((petPanel.frame.minX + stage.centerX - old.minX) / (old.maxX - old.minX)).clamped(0, 1) : 0.5
-        if movedScreen {
-            Log.note("the Dock moved to the display at \(Int(dock.screen.minX)),\(Int(dock.screen.minY)): following it")
+        let moved = !initial && dock.screen != old.screen
+        let fullScreen = DevTools.showcase == nil && FullScreen.isShowing(on: dock.screen)
+        setAway(fullScreen)
+        // In front of the user right now: shown, and on the Space his screen is showing.
+        let inSight = petPanel.isVisible && petPanel.isOnActiveSpace
+        if moved {
             brain.stopWalking()
-            if petPanel.isVisible {
-                following = true
-                // Never stuck on the way, whatever happens meanwhile.
-                followingTimeout.schedule(after: 1.5) { [weak self] in self?.following = false }
-                stage.dive { [weak self] in
-                    guard let self else { return }
-                    self.following = false
-                    self.followingTimeout.cancel()
-                    self.apply(DockGeometry.current(), initial: false, movedScreen: true, along: along)
+            if inSight {
+                // Down below the edge first; from there this runs again and finds him out of sight.
+                if !stage.isDiving {
+                    stage.dive { [weak self] in
+                        self?.petPanel.orderOut(nil)
+                        self?.refresh()
+                    }
                 }
                 return
             }
+            Log.note("followed the Dock to the display at \(Int(dock.screen.minX)),\(Int(dock.screen.minY))")
+        } else if fullScreen && !initial {
+            // He waits on his desktop. Only if he is on this very Space does he leave it.
+            if inSight { petPanel.orderOut(nil) }
+            return
         }
-        apply(dock, initial: initial, movedScreen: movedScreen, along: along)
-    }
 
-    /// True while he is on his way to the Dock on another display.
-    private var following = false
-    private let followingTimeout = OneShot()
-
-    private func apply(_ dock: DockInfo, initial: Bool, movedScreen: Bool, along: CGFloat) {
+        // Where along the Dock he stood, from 0 at its left end to 1 at its right end.
+        let along = old.maxX > old.minX ? ((petPanel.frame.minX + stage.centerX - old.minX) / (old.maxX - old.minX)).clamped(0, 1) : 0.5
         brain.dock = dock
         let height = min(dock.screen.height, dock.floorY - dock.screen.minY + 480)
         let strip = CGRect(x: dock.screen.minX, y: dock.screen.minY, width: dock.screen.width, height: height)
-        // Left alone when nothing changed: touching the window can bring it onto a full-screen Space.
         if petPanel.frame != strip { petPanel.setFrame(strip, display: false) }
         stage.frame = petPanel.contentView?.bounds ?? .zero
         stage.setFloor(dock.floorY - dock.screen.minY)
+        let show = !fullScreen && !userHidden
         if initial {
             stage.place(x: dock.maxX - dock.screen.minX - stage.spriteSize.width / 2 - 30)
-        } else if movedScreen {
-            // Same spot on the Dock, now on the other display.
+        } else if moved {
+            // The same spot along the Dock, now on the other display.
             let x = dock.minX + (dock.maxX - dock.minX) * along - dock.screen.minX
-            if petPanel.isVisible { stage.surface(at: x) } else { stage.place(x: x) }
+            if show { stage.surface(at: x) } else { stage.place(x: x) }
             brain.settle()
         }
+        // Onto the desktop his screen shows, if he is not there already.
+        if show && !inSight { petPanel.orderFrontRegardless() }
         brain.clampToDock()
         brain.cards.position()
         chat.reposition()
-        dockSignature = Self.dockSignature()
     }
 
-    private func scheduleLayout() {
-        relayout.schedule(after: 0.4) { [weak self] in self?.layout() }
+    private func setAway(_ value: Bool) {
+        guard value != away else { return }
+        away = value
+        if value {
+            Log.note("full screen on his screen: stepping aside")
+            brain.stepAside()
+            chat.close()
+            integrations?.releaseClaudeQuestions()
+        } else {
+            Log.note("full screen ended: back on the Dock")
+            brain.comeBack()
+        }
     }
 
-    // The Dock can move to another display without any notice to apps. With two or more displays a
-    // cheap look twice a second (one window lookup) catches it; with one display nothing runs.
+    /// For changes that come in bursts or settle a moment later (screens, the Dock's width, a Space).
+    private func scheduleRefresh() {
+        relayout.schedule(after: 0.4) { [weak self] in self?.refresh() }
+    }
+
+    /// macOS reports a Space change when the switch is over, and the window server already knows what
+    /// each display shows then. One more look shortly after covers a late update. (His window can only
+    /// be brought to the new desktop from here on: macOS moves it to the Space it has announced.)
+    private func spaceChanged() {
+        if FullScreen.exact { refresh() }
+        scheduleRefresh()
+    }
+
+    // The Dock can go to another display without any notice to apps. With two or more displays one
+    // small lookup of the Dock's window twice a second catches it; with one display nothing runs.
     private var dockWatch: DispatchSourceTimer?
-    private var dockSignature = ""
-
-    private static func dockSignature() -> String {
-        let inset = NSScreen.screens.first { $0.visibleFrame.minY - $0.frame.minY > 20 }?.displayID
-        return "\(inset.map(String.init) ?? "-")/\(DockGeometry.dockDisplay().map(String.init) ?? "-")"
-    }
 
     private func updateDockWatch() {
         guard NSScreen.screens.count > 1 else {
@@ -168,10 +175,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 0.5, repeating: 0.5, leeway: .milliseconds(250))
         timer.setEventHandler { [weak self] in
-            guard let self, Self.dockSignature() != self.dockSignature else { return }
-            self.layout()
+            guard let self, let screen = DockGeometry.visibleDockScreen(), screen != self.brain.dock.screen else { return }
+            self.refresh()
             // The screens' usable areas can lag a moment behind the Dock itself.
-            self.relayout.schedule(after: 1.2) { [weak self] in self?.layout() }
+            self.relayout.schedule(after: 1.2) { [weak self] in self?.refresh() }
         }
         timer.resume()
         dockWatch = timer
@@ -179,29 +186,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
 
     private func watch() {
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.scheduleLayout()
+            self?.scheduleRefresh()
             self?.updateDockWatch()
         }
         updateDockWatch()
         let ws = NSWorkspace.shared.notificationCenter
+        // Apps starting and quitting make the Dock wider or narrower.
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
-            ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.scheduleLayout() }
+            ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.scheduleRefresh() }
         }
+        // A swipe to another desktop or to a full-screen app, or an app going full screen.
+        ws.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.spaceChanged() }
         if DevTools.isolated {
             // Development: move his Dock while running, as if the real one moved
             // (post app.dockling.Dockling.devDock with object "main" or "external").
             DistributedNotificationCenter.default().addObserver(forName: Notification.Name("app.dockling.Dockling.devDock"), object: nil, queue: .main) { [weak self] note in
                 DockGeometry.devDisplay = note.object as? String
-                self?.layout()
+                self?.refresh()
             }
         }
-        NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: petPanel, queue: .main) { [weak self] _ in
-            self?.occlusionChanged()
-        }
-        // Going full screen, or swiping to a full-screen app, changes the Space; a game can also cover
-        // the screen when it starts.
-        ws.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.spaceChanged() }
-        ws.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in self?.scheduleFullScreenCheck() }
         prefs.$scaleX.combineLatest(prefs.$scaleY).dropFirst().sink { [weak self] x, y in
             guard let self else { return }
             self.stage.setScale(x: x, y: y)
@@ -250,7 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         if userHidden {
             userHidden = false
             comeBack.cancel()
-            showPet()
+            refresh()
         } else {
             userHidden = true
             putAway()
@@ -262,121 +265,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         chat.close()
         integrations?.releaseClaudeQuestions()
         petPanel.orderOut(nil)
-    }
-
-    private func showPet() {
-        guard !userHidden, !away else { return }
-        petPanel.orderFrontRegardless()
-    }
-
-    /// A full-screen app keeps him to his desktop at once. Its end is believed only when a second look a
-    /// second later agrees: in the middle of a Space switch the window list can miss the app's window.
-    private func settleOneDesktop(_ fullScreenApp: Bool) {
-        if fullScreenApp || !oneDesktop {
-            oneDesktopRecheck.cancel()
-            setOneDesktop(fullScreenApp)
-            return
-        }
-        guard !oneDesktopRecheck.isPending else { return }
-        oneDesktopRecheck.schedule(after: 1.0) { [weak self] in
-            guard let self, !self.away, !FullScreen.exists(on: self.brain.dock.screen) else { return }
-            self.setOneDesktop(false)
-        }
-    }
-
-    private func setOneDesktop(_ one: Bool) {
-        guard one != oneDesktop else { return }
-        oneDesktop = one
-        Log.note(one ? "a full-screen app is on his screen: keeping to this desktop" : "no full-screen app left: on every desktop again")
-        petPanel.keepToOneDesktop(one)
-    }
-
-    // MARK: - Full screen
-
-    /// macOS reports a Space change once the switch is over, and the window list shows a full-screen
-    /// app about 0.2 s later. So it is looked at every 50 ms for up to 1.5 s, and he is gone as soon as
-    /// it shows; going back to the desktop brings him back at once.
-    private func spaceChanged() {
-        spaceChanges += 1
-        let mine = spaceChanges
-        let wasAway = away
-        func look(_ n: Int) {
-            guard mine == spaceChanges else { return }
-            let nowAway = updateAway()
-            if nowAway != wasAway { return }
-            // Kept to one desktop and now on another desktop: he follows. Only once the Dock shows on
-            // his screen (it never does over a full-screen app) and after 0.8 s of clear looks: the
-            // window list can take that long to show a full-screen app, and following then would
-            // carry him onto it.
-            if !nowAway, oneDesktop, !petPanel.isOnActiveSpace, n <= 14, DockGeometry.visibleDockScreen() == brain.dock.screen {
-                showPet()
-                return
-            }
-            if n == 0 { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { look(n - 1) }
-        }
-        look(30)
-    }
-
-    /// macOS hides a window that is on every Space as soon as a switch to another Space starts, about
-    /// half a second before it tells apps about the switch, and shows it again when the switch ends,
-    /// on top of a full-screen app too. So when a full-screen app has a Space on his screen, this is
-    /// the moment to keep him to the desktop he is leaving: he stays there, and is there again the
-    /// moment the user swipes back. Plain switches between desktops are left to macOS.
-    private func occlusionChanged() {
-        guard DevTools.showcase == nil, !petPanel.occlusionState.contains(.visible), petPanel.isVisible,
-              !userHidden, !away, !oneDesktop else { return }
-        // An app going full screen right now may not have its full-screen size in the window list
-        // yet, so it is looked for every 50 ms until the switch is over (macOS reports that), never after.
-        let switchInProgress = spaceChanges
-        func look(_ n: Int) {
-            guard switchInProgress == spaceChanges, !oneDesktop, !away, !petPanel.occlusionState.contains(.visible) else { return }
-            if FullScreen.exists(on: brain.dock.screen) { setOneDesktop(true); return }
-            if n > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { look(n - 1) } }
-        }
-        look(14)
-    }
-
-    /// An app came to the front: it may fill the screen without a Space of its own (some games).
-    private func scheduleFullScreenCheck() {
-        fullScreenCheck.schedule(after: 0.3) { [weak self] in _ = self?.updateAway() }
-        fullScreenRecheck.schedule(after: 1.2) { [weak self] in _ = self?.updateAway() }
-    }
-
-    /// Steps aside while a full-screen app covers his screen and comes back after; returns `away`.
-    @discardableResult
-    private func updateAway() -> Bool {
-        guard DevTools.showcase == nil else { return false }
-        // The Dock seen on another display means it moved there, not that an app went full screen here.
-        let dockElsewhere = DockGeometry.visibleDockScreen().map { $0 != brain.dock.screen } ?? false
-        let covered = !dockElsewhere && FullScreen.covers(brain.dock.screen)
-        let fullScreenApp = covered || FullScreen.exists(on: brain.dock.screen)
-        Log.debug("full-screen check on \(brain.dock.screen): \(covered ? "covered" : "clear"), full-screen app \(fullScreenApp)")
-        guard covered != away else {
-            // The full-screen app was closed from another Space. Taking on one desktop waits for a calm
-            // moment (below): in the middle of a switch to a full-screen app the window list already has
-            // its window but does not yet show it covering, and he would stick to that Space.
-            if !away && !fullScreenApp { settleOneDesktop(false) }
-            return away
-        }
-        away = covered
-        if covered {
-            Log.note("full screen on his screen: stepping aside")
-            brain.stepAside()
-            chat.close()
-            integrations?.releaseClaudeQuestions()
-            // Kept to his desktop he is not on this Space and comes back with the desktop on the next
-            // swipe. Otherwise (on every Space, or caught here) he leaves the screen until then.
-            if !oneDesktop || petPanel.isOnActiveSpace { petPanel.orderOut(nil) }
-            setOneDesktop(true)
-        } else {
-            Log.note("full screen ended: back on the Dock")
-            settleOneDesktop(fullScreenApp)
-            layout()
-            showPet()
-            brain.comeBack()
-        }
-        return away
     }
 
     // MARK: - PetHost
@@ -394,7 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         putAway()
         comeBack.schedule(after: 600) { [weak self] in
             self?.userHidden = false
-            self?.showPet()
+            self?.refresh()
         }
     }
 
