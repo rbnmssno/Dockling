@@ -53,7 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         stage.setScale(x: prefs.scaleX, y: prefs.scaleY)
         stage.setSkin(Skin.load())
         layout(initial: true)
-        petPanel.orderFrontRegardless()
+        // Started while a full-screen app fills his screen: he waits for it to end.
+        if !updateAway() { petPanel.orderFrontRegardless() }
         brain.settle()
         // The one greeting besides waking from sleep: when he starts with the Mac.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.brain.react("wave", duration: 1.5) }
