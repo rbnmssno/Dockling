@@ -20,6 +20,8 @@ extension NSScreen {
 
 enum DockGeometry {
     static func current() -> DockInfo {
+        // The README showcase plays on a Dock of its own.
+        if let stage = Showcase.stage { return stage }
         let screens = NSScreen.screens
         let dock = UserDefaults(suiteName: "com.apple.dock")
         // The Dock's screen is the one whose usable area is cut at the bottom. When no screen shows that
