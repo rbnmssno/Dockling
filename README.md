@@ -27,7 +27,7 @@
 
 Click the pet and a small chat with Claude opens. While Claude Code works, it sits down at a laptop; it brings you permission requests with Allow and Deny, and tells you when a task is done.
 
-It costs next to nothing to keep around: 0% CPU while it stands or sleeps, and about 15 MB of memory.
+It costs next to nothing to keep around: 0% CPU while it stands or sleeps, and about 20 MB of memory.
 
 | Chat, dark theme | Chat, light theme |
 |---|---|
@@ -85,6 +85,8 @@ Every animation is a row of the sprite sheet played by Core Animation. The windo
 
 macOS doesn't tell apps where the Dock is, so its width is worked out from the Dock's own settings: icon size, pinned apps and the apps that are running.
 
+Nor does macOS say when the Dock goes to another display. That happens in one way only, when the cursor is pushed against the bottom edge of a display the Dock isn't on, so a transparent strip a few points high lies along that edge. The cursor reaching it starts a two-second run of looks at where the Dock's own window is; when it has moved, he dives below the edge and comes up on the Dock there. Nothing runs while the cursor is elsewhere.
+
 He belongs to a desktop the way a window does, so macOS itself carries him off the screen with the desktop when you swipe to a full-screen app, and brings him back with it; nothing is hidden or shown by a timer. Whether a display is showing a desktop or a full-screen Space is asked from the window server (`CGSCopyManagedDisplaySpaces`, the call window managers use, as there is no public one). If a future macOS drops it, a window that covers the whole screen counts as full screen instead.
 
 ## Building
@@ -125,7 +127,7 @@ The pixel font, Ghost Pixel, is [Pixelify Sans](https://github.com/eifetx/Pixeli
 
 Dockling — пиксельный питомец, который живёт на Dock. Кликни по нему, и откроется маленький чат с Claude. Ещё он следит за Claude Code: садится за ноутбук, пока Claude работает, приносит запросы на разрешения и говорит, когда задача готова. Интерфейс на русском или английском, по языку системы.
 
-Ресурсов почти не тратит: 0% процессора, пока стоит или спит, и около 15 МБ памяти.
+Ресурсов почти не тратит: 0% процессора, пока стоит или спит, и около 20 МБ памяти.
 
 ### Установка
 

@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
     private var integrations: Integrations?
     private var bag = Set<AnyCancellable>()
     private let relayout = OneShot()
+    private let dockWatch = DockWatch()
     private let comeBack = OneShot()
     /// Hidden from the menu ("Hide for 10 Minutes", or the menu bar icon).
     private var userHidden = false
@@ -49,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         stage.setScale(x: prefs.scaleX, y: prefs.scaleY)
         stage.setSkin(Skin.load())
         refresh(initial: true)
+        if DevTools.showcase == nil { dockWatch.onMove = { [weak self] in self?.refresh() } }
         brain.settle()
         // The one greeting besides waking from sleep: when he starts with the Mac.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.brain.react("wave", duration: 1.5) }
@@ -91,6 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         setAway(fullScreen)
         // In front of the user right now: shown, and on the Space his screen is showing.
         let inSight = petPanel.isVisible && petPanel.isOnActiveSpace
+        Log.debug("refresh: Dock on \(dock.screen.origin), was \(old.screen.origin), full screen \(fullScreen), in sight \(inSight)")
         if moved {
             brain.stopWalking()
             if inSight {
@@ -113,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         // Where along the Dock he stood, from 0 at its left end to 1 at its right end.
         let along = old.maxX > old.minX ? ((petPanel.frame.minX + stage.centerX - old.minX) / (old.maxX - old.minX)).clamped(0, 1) : 0.5
         brain.dock = dock
+        if DevTools.showcase == nil { dockWatch.dockScreen = dock.screen }
         let height = min(dock.screen.height, dock.floorY - dock.screen.minY + 480)
         let strip = CGRect(x: dock.screen.minX, y: dock.screen.minY, width: dock.screen.width, height: height)
         if petPanel.frame != strip { petPanel.setFrame(strip, display: false) }
@@ -161,35 +165,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         scheduleRefresh()
     }
 
-    // The Dock can go to another display without any notice to apps. With two or more displays one
-    // small lookup of the Dock's window twice a second catches it; with one display nothing runs.
-    private var dockWatch: DispatchSourceTimer?
-
-    private func updateDockWatch() {
-        guard NSScreen.screens.count > 1 else {
-            dockWatch?.cancel()
-            dockWatch = nil
-            return
-        }
-        guard dockWatch == nil else { return }
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 0.5, repeating: 0.5, leeway: .milliseconds(250))
-        timer.setEventHandler { [weak self] in
-            guard let self, let screen = DockGeometry.visibleDockScreen(), screen != self.brain.dock.screen else { return }
-            self.refresh()
-            // The screens' usable areas can lag a moment behind the Dock itself.
-            self.relayout.schedule(after: 1.2) { [weak self] in self?.refresh() }
-        }
-        timer.resume()
-        dockWatch = timer
-    }
-
     private func watch() {
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             self?.scheduleRefresh()
-            self?.updateDockWatch()
+            self?.dockWatch.screensChanged()
         }
-        updateDockWatch()
         let ws = NSWorkspace.shared.notificationCenter
         // Apps starting and quitting make the Dock wider or narrower.
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {

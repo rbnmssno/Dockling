@@ -31,15 +31,12 @@ enum DockGeometry {
             return DockInfo(screen: s.frame, floorY: s.frame.minY + (tile > 0 ? tile : 64) + 20, minX: s.frame.midX - width / 2, maxX: s.frame.midX + width / 2)
         }
         let dock = UserDefaults(suiteName: "com.apple.dock")
-        // The Dock's screen is the display holding the Dock's own screen-sized window. The screens'
-        // usable areas can keep the Dock's cut on the old display after the Dock moved, so they only
-        // decide when the window has never been seen. While a full-screen app hides the Dock its
-        // window is gone; the display it was last seen on still counts.
+        // The Dock's screen is the display its own screen-sized window lies on. The screens' usable
+        // areas only decide when that window cannot be found: they keep the Dock's cut on the old
+        // display long after the Dock has moved.
         let bottomInset = { (s: NSScreen) in s.visibleFrame.minY - s.frame.minY }
         let byInset = screens.filter { bottomInset($0) > 20 }.max(by: { bottomInset($0) < bottomInset($1) })
-        var byWindow = (dockDisplay() ?? lastDockDisplay).flatMap { id in screens.first { $0.displayID == id } }
-        // Never seen yet and on no screen: a full-screen app hides it, so it is on a display showing one.
-        if byWindow == nil { byWindow = screens.first { FullScreen.isShowing(on: $0.frame) } }
+        let byWindow = dockDisplay().flatMap { id in screens.first { $0.displayID == id } }
         let dockScreen = byWindow ?? byInset ?? NSScreen.main ?? screens[0]
         let frame = dockScreen.frame
         var inset = bottomInset(dockScreen)
@@ -72,9 +69,8 @@ enum DockGeometry {
 
     // MARK: - Which display the Dock is on
 
-    /// The display the Dock is on right now, when that can be seen: the display showing the Dock's
-    /// window (or the development override). Nil while a full-screen app hides the Dock.
-    static func visibleDockScreen() -> CGRect? {
+    /// The display the Dock is on (or the development override), nil when it cannot be told.
+    static func dockScreen() -> CGRect? {
         let screens = NSScreen.screens
         if let which = devDisplay { return (which == "main" ? screens.first : screens.first { $0 != screens.first })?.frame }
         return dockDisplay().flatMap { id in screens.first { $0.displayID == id }?.frame }
@@ -83,48 +79,38 @@ enum DockGeometry {
     /// Development: his Dock's display, `main` or `external` (`--dock-display`, or changed while running).
     static var devDisplay = DevTools.value(after: "--dock-display")
 
-    /// The Dock's own screen-sized window (layer 20): it sits on the Dock's display and leaves the
-    /// screen while a full-screen app shows there. It is found once and then looked up by its number,
-    /// one small request; the whole window list is read again only when that window no longer exists.
+    /// The Dock's own screen-sized window (layer 20). It lies on the Dock's display and goes there with
+    /// the Dock, also while a full-screen app keeps it off the screen. It is found once and then read
+    /// by its number, one small request; the window list is searched again only if that window is gone.
     private static var dockWindowID: CGWindowID?
     private static var searchedAt: CFAbsoluteTime = 0
-    /// Where the Dock's window was last seen, for the time it is off the screen.
-    private static var lastDockDisplay: CGDirectDisplayID?
 
-    /// The display the Dock's window is on, or nil while it is off the screen.
     static func dockDisplay() -> CGDirectDisplayID? {
-        let found = findDockDisplay()
-        if let found { lastDockDisplay = found }
-        return found
-    }
-
-    private static func findDockDisplay() -> CGDirectDisplayID? {
         if let id = dockWindowID {
-            let ids = [UnsafeRawPointer(bitPattern: UInt(id))] as CFArray
-            if let info = (CGWindowListCreateDescriptionFromArray(ids) as? [[String: Any]])?.first { return displayIfOnScreen(info) }
+            // The window numbers go in as plain values; a bridged Swift array would box them and find nothing.
+            var number: UnsafeRawPointer? = UnsafeRawPointer(bitPattern: UInt(id))
+            if let ids = CFArrayCreate(kCFAllocatorDefault, &number, 1, nil),
+               let info = (CGWindowListCreateDescriptionFromArray(ids) as? [[String: Any]])?.first, let bounds = bounds(info) {
+                return display(containing: bounds)
+            }
             dockWindowID = nil
         }
-        // Not known (first look, or the Dock restarted): searched for at most once in five seconds.
+        // Not known (first look, or the Dock restarted): searched for at most once a second.
         let now = CFAbsoluteTimeGetCurrent()
-        guard now - searchedAt > 5,
+        guard now - searchedAt > 1,
               let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier else { return nil }
         searchedAt = now
         let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
         for w in list where (w[kCGWindowOwnerPID as String] as? Int32) == dock && (w[kCGWindowLayer as String] as? Int) == 20 {
-            guard let number = w[kCGWindowNumber as String] as? Int,
-                  let dict = w[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: dict), bounds.width > 300, bounds.height > 300 else { continue }
+            guard let number = w[kCGWindowNumber as String] as? Int, let bounds = bounds(w), bounds.width > 300, bounds.height > 300 else { continue }
             dockWindowID = CGWindowID(number)
-            return displayIfOnScreen(w)
+            return display(containing: bounds)
         }
         return nil
     }
 
-    private static func displayIfOnScreen(_ info: [String: Any]) -> CGDirectDisplayID? {
-        guard (info[kCGWindowIsOnscreen as String] as? Bool) == true,
-              let dict = info[kCGWindowBounds as String] as? NSDictionary,
-              let bounds = CGRect(dictionaryRepresentation: dict) else { return nil }
-        return display(containing: bounds)
+    private static func bounds(_ info: [String: Any]) -> CGRect? {
+        (info[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
     }
 
     private static func display(containing bounds: CGRect) -> CGDirectDisplayID? {
