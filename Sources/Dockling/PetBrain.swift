@@ -465,15 +465,15 @@ final class PetBrain: PetStageDelegate {
 
     func stageMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(ActionMenuItem(title: "Поговорить") { [weak self] in self?.host?.toggleChat() })
-        menu.addItem(ActionMenuItem(title: asleep ? "Разбудить" : "Уложить спать") { [weak self] in
+        menu.addItem(ActionMenuItem(title: tr("Поговорить", "Chat")) { [weak self] in self?.host?.toggleChat() })
+        menu.addItem(ActionMenuItem(title: asleep ? tr("Разбудить", "Wake Up") : tr("Уложить спать", "Put to Sleep")) { [weak self] in
             guard let self else { return }
             self.setAsleep(!self.asleep)
         })
-        menu.addItem(ActionMenuItem(title: "Спрятаться на 10 минут") { [weak self] in self?.host?.hidePetForAWhile() })
+        menu.addItem(ActionMenuItem(title: tr("Спрятаться на 10 минут", "Hide for 10 Minutes")) { [weak self] in self?.host?.hidePetForAWhile() })
         menu.addItem(.separator())
-        menu.addItem(ActionMenuItem(title: "Настройки…") { [weak self] in self?.host?.openSettings() })
-        menu.addItem(ActionMenuItem(title: "Выйти") { [weak self] in self?.host?.quit() })
+        menu.addItem(ActionMenuItem(title: tr("Настройки…", "Settings…")) { [weak self] in self?.host?.openSettings() })
+        menu.addItem(ActionMenuItem(title: tr("Выйти", "Quit")) { [weak self] in self?.host?.quit() })
         return menu
     }
 

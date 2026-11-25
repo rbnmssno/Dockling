@@ -30,8 +30,8 @@ final class ChatController {
         claude.binaryOverride = { [weak prefs] in prefs?.claudePath ?? "" }
         claude.onEvent = { [weak self] in self?.handle($0) }
         voice.onText = { [weak self] text in self?.model.input = text }
-        model.messages = [ChatMessage(role: .bot, text: "Привет. Я живу у тебя на Dock. Спрашивай что угодно.")]
-        model.status = ClaudeChat.locate(custom: prefs.claudePath) == nil ? "нет claude code" : "на связи"
+        model.messages = [ChatMessage(role: .bot, text: tr("Привет. Я живу у тебя на Dock. Спрашивай что угодно.", "Hi. I live on your Dock. Ask me anything."))]
+        model.status = ClaudeChat.locate(custom: prefs.claudePath) == nil ? ChatModel.noClaude : ChatModel.online
     }
 
     // MARK: - Window
@@ -46,7 +46,7 @@ final class ChatController {
         // The face from the current sheet (it may have been replaced in Settings).
         model.avatar = stage.skin?.faceImage().map { NSImage(cgImage: $0, size: CGSize(width: $0.width, height: $0.height)) }
         offerClipboard()
-        model.status = ClaudeChat.locate(custom: prefs.claudePath) == nil ? "нет claude code" : "на связи"
+        model.status = ClaudeChat.locate(custom: prefs.claudePath) == nil ? ChatModel.noClaude : ChatModel.online
         restyle()
         place(over: stage, in: window)
         brain?.cards.hide()
@@ -86,7 +86,8 @@ final class ChatController {
         panel.onEscape = { [weak self] in self?.close() }
         resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
             // Clicking anywhere else closes the chat, as with a popover.
-            guard let self, !self.model.listening else { return }
+            // A scripted showcase runs while another app has the focus, so there it stays open.
+            guard let self, !self.model.listening, !DevTools.scripted else { return }
             Log.debug("chat lost focus, closing")
             self.close()
         }
@@ -167,9 +168,12 @@ final class ChatController {
         var image: Data?
         if let att {
             switch att.kind {
-            case .file: message = "Файл «\(att.label)»:\n\(att.text ?? "")\n\nВопрос: \(text)"
-            case .text: message = "Текст, о котором речь:\n«\(att.text ?? "")»\n\nПросьба: \(text)"
-            case .screenshot: message = "К вопросу приложен скриншот экрана.\n\nВопрос: \(text)"; image = att.image
+            case .file: message = tr("Файл «\(att.label)»:\n\(att.text ?? "")\n\nВопрос: \(text)",
+                                    "File \"\(att.label)\":\n\(att.text ?? "")\n\nQuestion: \(text)")
+            case .text: message = tr("Текст, о котором речь:\n«\(att.text ?? "")»\n\nПросьба: \(text)",
+                                    "The text in question:\n\"\(att.text ?? "")\"\n\nRequest: \(text)")
+            case .screenshot: message = tr("К вопросу приложен скриншот экрана.\n\nВопрос: \(text)",
+                                          "A screenshot is attached to the question.\n\nQuestion: \(text)"); image = att.image
             }
         }
         let ctx = context()
@@ -195,7 +199,7 @@ final class ChatController {
             brain?.thinking = false
             brain?.talking = true
         case .finished(let text):
-            updateLast(text.isEmpty ? "Остановлено." : text)
+            updateLast(text.isEmpty ? tr("Остановлено.", "Stopped.") : text)
             finishReply()
             if voiceQuestion && prefs.speakVoiceReplies && !text.isEmpty { voice.speak(text) }
         case .failed(let text):
@@ -261,7 +265,7 @@ final class ChatController {
             guard let self else { return }
             self.model.input = ""
             if text.isEmpty {
-                self.model.messages.append(ChatMessage(role: .note, text: "Ничего не расслышал. Зажми кнопку и говори."))
+                self.model.messages.append(ChatMessage(role: .note, text: tr("Ничего не расслышал. Зажми кнопку и говори.", "I didn't catch that. Hold the button and speak.")))
             } else {
                 self.send(text, viaVoice: true)
             }
@@ -290,31 +294,38 @@ final class ChatController {
         let ext = url.pathExtension.lowercased()
         if ["png", "jpg", "jpeg", "heic", "gif", "tiff", "webp"].contains(ext), let image = NSImage(contentsOf: url), let png = image.pngForClaude() {
             attach(ChatAttachment(kind: .screenshot, label: url.lastPathComponent, image: png, thumbnail: image,
-                                  quick: [("Что тут?", "Что на этой картинке?")]))
+                                  quick: [(tr("Что тут?", "What's This?"), tr("Что на этой картинке?", "What's in this picture?"))]))
             return
         }
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count < 400_000,
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .windowsCP1251) else {
-            attach(ChatAttachment(kind: .file, label: url.lastPathComponent, text: "(файл не текстовый, прочитать его не получилось)", quick: []))
-            model.messages.append(ChatMessage(role: .note, text: "Я читаю текстовые файлы и картинки. Этот файл не получилось прочитать."))
+            attach(ChatAttachment(kind: .file, label: url.lastPathComponent, text: tr("(файл не текстовый, прочитать его не получилось)", "(not a text file, it could not be read)"), quick: []))
+            model.messages.append(ChatMessage(role: .note, text: tr("Я читаю текстовые файлы и картинки. Этот файл не получилось прочитать.", "I can read text files and pictures. This file could not be read.")))
             return
         }
         attach(ChatAttachment(kind: .file, label: url.lastPathComponent, text: String(text.prefix(60_000)),
-                              quick: [("Перескажи", "Перескажи коротко, что в этом файле."), ("Что главное?", "Что тут самое важное?")]))
+                              quick: [(tr("Перескажи", "Summarize"), tr("Перескажи коротко, что в этом файле.", "Briefly sum up what this file says.")),
+                                      (tr("Что главное?", "Key Points"), tr("Что тут самое важное?", "What matters most here?"))]))
     }
 
-    static let textActions = [("Объясни", "Объясни этот текст простыми словами."), ("Переведи", "Переведи этот текст."), ("Исправь", "Исправь ошибки в этом тексте.")]
+    static let textActions = [(tr("Объясни", "Explain"), tr("Объясни этот текст простыми словами.", "Explain this text in plain words.")),
+                              (tr("Переведи", "Translate"), ChatController.translatePrompt),
+                              (tr("Исправь", "Fix"), tr("Исправь ошибки в этом тексте.", "Fix the mistakes in this text."))]
+    static let translatePrompt = tr("Переведи этот текст.", "Translate this text.")
 
     func attachText(_ text: String, label: String) {
         let short = text.count > 24 ? String(text.prefix(23)) + "…" : text
-        attach(ChatAttachment(kind: .text, label: label + ": «" + short + "»", text: String(text.prefix(20_000)), quick: Self.textActions))
+        attach(ChatAttachment(kind: .text, label: label + ": " + quoted(short), text: String(text.prefix(20_000)), quick: Self.textActions))
     }
 
     func attachImage(_ image: NSImage, label: String) {
         guard let png = image.pngForClaude() else { return }
         attach(ChatAttachment(kind: .screenshot, label: label, image: png, thumbnail: image,
-                              quick: [("Что тут?", "Что на этом скриншоте?")]))
+                              quick: Self.screenshotActions))
     }
+
+    static let clipboardScreenshotLabel = tr("Скриншот из буфера", "Clipboard screenshot")
+    static let screenshotActions = [(tr("Что тут?", "What's This?"), tr("Что на этом скриншоте?", "What's in this screenshot?"))]
 
     /// A picture alone on the clipboard, the way a screenshot taken with Control (⌃⇧⌘3, ⌃⇧⌘4) leaves it.
     /// A picture copied from a page or a file comes with a link, text or a file name and does not count.
@@ -332,33 +343,64 @@ final class ChatController {
         defer { lastClipboard = pb.changeCount }
         guard pb.changeCount != lastClipboard, model.attachment == nil, !DevTools.scripted else { return }
         if let image = Self.clipboardScreenshot(pb), let png = image.pngForClaude() {
-            model.attachment = ChatAttachment(kind: .screenshot, label: "Скриншот из буфера", image: png, thumbnail: image,
-                                              quick: [("Что тут?", "Что на этом скриншоте?")])
+            model.attachment = ChatAttachment(kind: .screenshot, label: ChatController.clipboardScreenshotLabel, image: png, thumbnail: image,
+                                              quick: Self.screenshotActions)
             return
         }
         guard let text = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
         let short = text.count > 24 ? String(text.prefix(23)) + "…" : text
-        model.attachment = ChatAttachment(kind: .text, label: "Из буфера: «" + short + "»", text: String(text.prefix(20_000)), quick: Self.textActions)
+        model.attachment = ChatAttachment(kind: .text, label: tr("Из буфера", "Clipboard") + ": " + quoted(short), text: String(text.prefix(20_000)), quick: Self.textActions)
     }
 
     // MARK: - Reminders
 
-    /// "Напомни через 20 минут позвонить маме" is handled here, without asking Claude.
+    /// "Напомни через 20 минут позвонить маме", "remind me in 20 minutes to call mom" and "remind me to call mom
+    /// in 20 minutes" are handled here, without asking Claude. The answer is in the language of the request.
     private func handleReminder(_ text: String) -> Bool {
-        let pattern = #"^\s*напомни\s+(?:мне\s+)?через\s+(\d+)\s*(сек|мин|ч)[а-яё]*\.?\s*(.*)$"#
-        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
-              let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-              let nRange = Range(m.range(at: 1), in: text), let uRange = Range(m.range(at: 2), in: text) else { return false }
-        let n = Int(text[nRange]) ?? 1
-        let unit = text[uRange].lowercased()
-        let seconds = Double(n) * (unit.hasPrefix("ч") ? 3600 : unit.hasPrefix("мин") ? 60 : 1)
-        var what = Range(m.range(at: 3), in: text).map { String(text[$0]) } ?? ""
-        what = what.trimmingCharacters(in: .whitespacesAndNewlines)
-        if what.isEmpty { what = "ты просил напомнить" }
-        let when = unit.hasPrefix("ч") ? "\(n) ч" : unit.hasPrefix("мин") ? "\(n) мин" : "\(n) сек"
-        model.messages.append(ChatMessage(role: .bot, text: "Хорошо, напомню через \(when)."))
-        Reminders.shared.add(after: seconds, text: what)
+        guard let r = Self.parseReminder(text) else { return false }
+        let what = r.what.isEmpty ? (r.russian ? "ты просил напомнить" : "You asked me to remind you") : r.what
+        model.messages.append(ChatMessage(role: .bot, text: r.russian ? "Хорошо, напомню через \(r.when)." : "OK, I'll remind you in \(r.when)."))
+        Reminders.shared.add(after: r.seconds, text: what)
         return true
+    }
+
+    struct ParsedReminder: Equatable {
+        var seconds: Double
+        var when: String
+        var what: String
+        var russian: Bool
+    }
+
+    static func parseReminder(_ text: String) -> ParsedReminder? {
+        func match(_ pattern: String) -> [String]? {
+            guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+                  let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
+            return (1..<m.numberOfRanges).map { Range(m.range(at: $0), in: text).map { String(text[$0]) } ?? "" }
+        }
+        func clean(_ s: String) -> String {
+            s.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+        }
+        // Russian: "напомни (мне) через 20 минут позвонить".
+        if let g = match(#"^\s*напомни\s+(?:мне\s+)?через\s+(\d+)\s*(сек|мин|ч)[а-яё]*\.?\s*(.*)$"#) {
+            let n = Int(g[0]) ?? 1, unit = g[1].lowercased()
+            let seconds = Double(n) * (unit.hasPrefix("ч") ? 3600 : unit.hasPrefix("мин") ? 60 : 1)
+            let when = unit.hasPrefix("ч") ? "\(n) ч" : unit.hasPrefix("мин") ? "\(n) мин" : "\(n) сек"
+            return ParsedReminder(seconds: seconds, when: when, what: clean(g[2]), russian: true)
+        }
+        // English: "remind me in 20 minutes (to) call mom" or "remind me to call mom in 20 minutes".
+        let unit = #"(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b"#
+        var n = 0, u = "", what = ""
+        if let g = match(#"^\s*remind\s+me\s+in\s+(\d+)\s*"# + unit + #"\.?\s*(?:to\s+|that\s+|about\s+)?(.*)$"#) {
+            n = Int(g[0]) ?? 1; u = g[1].lowercased(); what = g[2]
+        } else if let g = match(#"^\s*remind\s+me\s+(?:to\s+|that\s+|about\s+)?(.+?)\s+in\s+(\d+)\s*"# + unit + #"\s*\.?\s*$"#) {
+            what = g[0]; n = Int(g[1]) ?? 1; u = g[2].lowercased()
+        } else {
+            return nil
+        }
+        let hours = u.hasPrefix("h"), minutes = u.hasPrefix("m")
+        let seconds = Double(n) * (hours ? 3600 : minutes ? 60 : 1)
+        let word = hours ? "hour" : minutes ? "minute" : "second"
+        return ParsedReminder(seconds: seconds, when: "\(n) \(word)\(n == 1 ? "" : "s")", what: clean(what), russian: false)
     }
 
     // MARK: - Limits
@@ -368,14 +410,14 @@ final class ChatController {
         guard let s = limits.session else { return }
         let resetKey = limits.sessionReset.map { String(Int($0.timeIntervalSince1970)) } ?? "?"
         let mins = limits.sessionReset.map { max(0, Int($0.timeIntervalSinceNow / 60)) }
-        let meta = mins.map { "Сброс через " + ($0 >= 60 ? "\($0 / 60) ч \($0 % 60) мин" : "\($0) мин") }
+        let meta = mins.map { tr("Сброс через ", "Resets in ") + durationText(minutes: $0) }
         if s >= 98, !warned.contains("98-" + resetKey) {
             warned.insert("98-" + resetKey)
             brain.upset()
-            brain.notify(Card(icon: .limit, color: Card.red, text: "Лимит сессии: \(Int(s))%", meta: meta, duration: 6, tag: "limit"))
+            brain.notify(Card(icon: .limit, color: Card.red, text: tr("Лимит сессии: \(Int(s))%", "Session limit: \(Int(s))%"), meta: meta, duration: 6, tag: "limit"))
         } else if s >= 85, !warned.contains("85-" + resetKey) {
             warned.insert("85-" + resetKey)
-            brain.notify(Card(icon: .limit, color: Card.amber, text: "Лимит сессии: \(Int(s))%", meta: meta, duration: 5, tag: "limit"))
+            brain.notify(Card(icon: .limit, color: Card.amber, text: tr("Лимит сессии: \(Int(s))%", "Session limit: \(Int(s))%"), meta: meta, duration: 5, tag: "limit"))
         }
     }
 }

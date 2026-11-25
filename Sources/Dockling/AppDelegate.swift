@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
-    let prefs = Preferences()
+    let prefs = Preferences(store: DevTools.isolated ? UserDefaults(suiteName: "app.dockling.Dockling.test")! : .standard)
     let loginItem = LoginItem()
     let hookInstaller = HookInstaller()
     private var petPanel: PetPanel!
@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         Log.echo = CommandLine.arguments.contains("--log")
         // One pet is enough: a second copy hands over to the first and leaves.
         let mine = ProcessInfo.processInfo.processIdentifier
-        if NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "").contains(where: { $0.processIdentifier != mine }) {
+        if !DevTools.isolated, NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "").contains(where: { $0.processIdentifier != mine }) {
             NSApp.terminate(nil)
             return
         }
@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
             integrations?.start()
         }
 
-        loginItem.ensure()
+        if !DevTools.isolated { loginItem.ensure() }
         Log.debug("dock \(brain.dock) panel \(petPanel.frame) floor \(stage.floorY) sprite \(stage.spriteSize) x \(stage.centerX)")
         DevTools.run(self)
     }
@@ -175,11 +175,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
             item.button?.image = StatusIcon.image()
             let menu = NSMenu()
-            menu.addItem(ActionMenuItem(title: "Поговорить") { [weak self] in self?.chat.open() })
-            menu.addItem(ActionMenuItem(title: "Показать или спрятать") { [weak self] in self?.togglePet() })
+            menu.addItem(ActionMenuItem(title: tr("Поговорить", "Chat")) { [weak self] in self?.chat.open() })
+            menu.addItem(ActionMenuItem(title: tr("Показать или спрятать", "Show or Hide")) { [weak self] in self?.togglePet() })
             menu.addItem(.separator())
-            menu.addItem(ActionMenuItem(title: "Настройки…") { [weak self] in self?.openSettings() })
-            menu.addItem(ActionMenuItem(title: "Выйти") { [weak self] in self?.quit() })
+            menu.addItem(ActionMenuItem(title: tr("Настройки…", "Settings…")) { [weak self] in self?.openSettings() })
+            menu.addItem(ActionMenuItem(title: tr("Выйти", "Quit")) { [weak self] in self?.quit() })
             item.menu = menu
             statusItem = item
         } else if let statusItem {
@@ -223,8 +223,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         var card = Card(icon: .clock, color: Card.violet, text: title, hold: true, call: true, tag: "reminder")
         card.duration = 14
         card.actions = [
-            CardAction(title: "Готово", primary: true) { [weak self] in self?.brain.react("happy", duration: 1.7) },
-            CardAction(title: "Позже") { Reminders.shared.add(after: 300, text: text) },
+            CardAction(title: tr("Готово", "Done"), primary: true) { [weak self] in self?.brain.react("happy", duration: 1.7) },
+            CardAction(title: tr("Позже", "Later")) { Reminders.shared.add(after: 300, text: text) },
         ]
         brain.notify(card)
     }

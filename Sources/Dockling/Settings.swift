@@ -56,8 +56,8 @@ final class LoginItem: ObservableObject {
             }
         } catch {
             problem = enabled
-                ? "macOS не дала добавить приложение в автозапуск. Добавь его вручную: Системные настройки → Основные → Объекты входа."
-                : "Не получилось убрать приложение из автозапуска. Убери его вручную: Системные настройки → Основные → Объекты входа."
+                ? tr("macOS не дала добавить приложение в автозапуск. Добавь его вручную: Системные настройки → Основные → Объекты входа.", "macOS didn't let Dockling open at login. Add it by hand: System Settings → General → Login Items.")
+                : tr("Не получилось убрать приложение из автозапуска. Убери его вручную: Системные настройки → Основные → Объекты входа.", "Couldn't stop Dockling from opening at login. Remove it by hand: System Settings → General → Login Items.")
             Log.error("login item change failed: \((error as NSError).code)")
         }
         refresh()
@@ -113,23 +113,23 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero
-                section("Персонаж") {
-                    slider("Ширина", value: $prefs.scaleX, range: Preferences.scaleRange, label: "\(Int(prefs.scaleX * 100))%")
-                    slider("Высота", value: $prefs.scaleY, range: Preferences.scaleRange, label: "\(Int(prefs.scaleY * 100))%")
-                    slider("Скорость бега", value: $prefs.walkSpeed, range: Preferences.speedRange, label: "\(Int(prefs.walkSpeed)) пт/с")
-                    Toggle("Гуляет по Dock сам", isOn: $prefs.strolls)
+                section(tr("Персонаж", "Character")) {
+                    slider(tr("Ширина", "Width"), value: $prefs.scaleX, range: Preferences.scaleRange, label: "\(Int(prefs.scaleX * 100))%")
+                    slider(tr("Высота", "Height"), value: $prefs.scaleY, range: Preferences.scaleRange, label: "\(Int(prefs.scaleY * 100))%")
+                    slider(tr("Скорость бега", "Running speed"), value: $prefs.walkSpeed, range: Preferences.speedRange, label: tr("\(Int(prefs.walkSpeed)) пт/с", "\(Int(prefs.walkSpeed)) pt/s"))
+                    Toggle(tr("Гуляет по Dock сам", "Walks along the Dock on his own"), isOn: $prefs.strolls)
                 }
-                section("Вид") {
-                    Picker("Тема", selection: $prefs.theme) {
-                        Text("Авто").tag(ThemeChoice.auto)
-                        Text("Светлая").tag(ThemeChoice.light)
-                        Text("Тёмная").tag(ThemeChoice.dark)
+                section(tr("Вид", "Appearance")) {
+                    Picker(tr("Тема", "Theme"), selection: $prefs.theme) {
+                        Text(tr("Авто", "Auto")).tag(ThemeChoice.auto)
+                        Text(tr("Светлая", "Light")).tag(ThemeChoice.light)
+                        Text(tr("Тёмная", "Dark")).tag(ThemeChoice.dark)
                     }
                     .pickerStyle(.segmented)
-                    slider("Прозрачность стекла", value: $prefs.transparency, range: 0...100, label: "\(Int(prefs.transparency))%")
-                    Toggle("Значок в строке меню", isOn: $prefs.showMenuBarIcon)
+                    slider(tr("Прозрачность стекла", "Glass transparency"), value: $prefs.transparency, range: 0...100, label: "\(Int(prefs.transparency))%")
+                    Toggle(tr("Значок в строке меню", "Menu bar icon"), isOn: $prefs.showMenuBarIcon)
                     if !prefs.showMenuBarIcon {
-                        Text("Без значка настройки открываются правым кликом по персонажу или повторным запуском Dockling.")
+                        Text(tr("Без значка настройки открываются правым кликом по персонажу или повторным запуском Dockling.", "Without the icon, open Settings by right-clicking the character or by opening Dockling again."))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -138,36 +138,36 @@ struct SettingsView: View {
                         Image(systemName: claudeFound == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                             .foregroundStyle(claudeFound == nil ? .orange : .green)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(claudeFound == nil ? "Claude Code не найден" : "Чат работает через твой Claude Code, по подписке")
-                            Text(claudeFound.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "Установи Claude Code или укажи путь к нему.").font(.caption).foregroundStyle(.secondary)
+                            Text(claudeFound == nil ? tr("Claude Code не найден", "Claude Code not found") : tr("Чат работает через твой Claude Code, по подписке", "The chat runs on your Claude Code subscription"))
+                            Text(claudeFound.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? tr("Установи Claude Code или укажи путь к нему.", "Install Claude Code or choose where it is.")).font(.caption).foregroundStyle(.secondary)
                                 .lineLimit(1).truncationMode(.middle)
                         }
                         Spacer()
-                        Button("Указать…", action: pickClaude)
+                        Button(tr("Указать…", "Choose…"), action: pickClaude)
                     }
-                    Toggle("Отвечать вслух на голосовые вопросы", isOn: $prefs.speakVoiceReplies)
+                    Toggle(tr("Отвечать вслух на голосовые вопросы", "Read answers to voice questions aloud"), isOn: $prefs.speakVoiceReplies)
                 }
                 section("Claude Code") {
-                    Toggle("Показывать, что делает Claude Code", isOn: Binding(get: { hooks.installed }, set: { hooks.setInstalled($0) }))
-                    Text("Добавляет хуки в ~/.claude/settings.json: статус работы, вопросы о разрешениях с кнопками, итог задачи. Чужие хуки не трогаются, копия файла сохраняется рядом.")
+                    Toggle(tr("Показывать, что делает Claude Code", "Show what Claude Code is doing"), isOn: Binding(get: { hooks.installed }, set: { hooks.setInstalled($0) }))
+                    Text(tr("Добавляет хуки в ~/.claude/settings.json: статус работы, вопросы о разрешениях с кнопками, итог задачи. Чужие хуки не трогаются, копия файла сохраняется рядом.", "Adds hooks to ~/.claude/settings.json: work status, permission requests with buttons, a summary when a task ends. Other hooks are left alone, and a backup of the file is saved next to it."))
                         .font(.caption).foregroundStyle(.secondary)
                     if let problem = hooks.problem { Text(problem).foregroundStyle(.red).font(.callout) }
                 }
-                section("Уведомления") {
-                    Toggle("Встречи из календаря за 10 минут", isOn: $prefs.calendarReminders)
-                    Toggle("Предлагать спросить про скриншот", isOn: $prefs.screenshotOffers)
+                section(tr("Уведомления", "Notifications")) {
+                    Toggle(tr("Встречи из календаря за 10 минут", "Calendar meetings 10 minutes ahead"), isOn: $prefs.calendarReminders)
+                    Toggle(tr("Предлагать спросить про скриншот", "Offer to ask about screenshots"), isOn: $prefs.screenshotOffers)
                 }
-                section("Система") {
-                    Toggle("Запускать вместе с системой", isOn: Binding(get: { login.isOn }, set: { login.setEnabled($0) }))
+                section(tr("Система", "System")) {
+                    Toggle(tr("Запускать вместе с системой", "Open at login"), isOn: Binding(get: { login.isOn }, set: { login.setEnabled($0) }))
                     if login.needsApproval {
-                        Text("Автозапуск выключен в Системных настройках → Основные → Объекты входа.").font(.caption).foregroundStyle(.orange)
+                        Text(tr("Автозапуск выключен в Системных настройках → Основные → Объекты входа.", "Opening at login is turned off in System Settings → General → Login Items.")).font(.caption).foregroundStyle(.orange)
                     }
                     if let p = login.problem { Text(p).font(.caption).foregroundStyle(.red) }
                     if !LoginItem.installedInApplications {
-                        Text("Для автозапуска перенеси приложение в «Программы».").font(.caption).foregroundStyle(.secondary)
+                        Text(tr("Для автозапуска перенеси приложение в «Программы».", "To open at login, move the app to Applications.")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Text("Пиксельный шрифт: Ghost Pixel, изменённая версия Pixelify Sans © The Pixelify Sans Project Authors, SIL Open Font License 1.1.")
+                Text(tr("Пиксельный шрифт: Ghost Pixel, изменённая версия Pixelify Sans © The Pixelify Sans Project Authors, SIL Open Font License 1.1.", "Pixel font: Ghost Pixel, a modified version of Pixelify Sans © The Pixelify Sans Project Authors, SIL Open Font License 1.1."))
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(24)
@@ -191,7 +191,7 @@ struct SettingsView: View {
             DockPreview(skin: skin, scaleX: prefs.scaleX, scaleY: prefs.scaleY, speed: prefs.walkSpeed)
             VStack(alignment: .leading, spacing: 6) {
                 Text("GHOST").font(.pixel(30)).foregroundStyle(.white)
-                Text("Живёт на Dock, отвечает как Claude,\nследит за Claude Code и календарём.")
+                Text(tr("Живёт на Dock, отвечает как Claude,\nследит за Claude Code и календарём.", "Lives on the Dock, answers as Claude,\nkeeps an eye on Claude Code and your calendar."))
                     .font(.callout).foregroundStyle(.white.opacity(0.82))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -225,7 +225,7 @@ struct SettingsView: View {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.showsHiddenFiles = true
-        panel.message = "Выбери программу claude"
+        panel.message = tr("Выбери программу claude", "Choose the claude program")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         prefs.claudePath = url.path
         claudeFound = ClaudeChat.locate(custom: url.path)?.path

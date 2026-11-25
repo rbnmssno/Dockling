@@ -63,8 +63,12 @@ extension Comparable {
 /// Where the app keeps its own files.
 enum Paths {
     static let support: URL = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let url = base.appendingPathComponent("Dockling", isDirectory: true)
+        // An `--isolated` test run keeps its hook socket, reminders and chat folder in a temporary folder,
+        // away from the Dockling the user is running.
+        let url = DevTools.isolated
+            ? FileManager.default.temporaryDirectory.appendingPathComponent("Dockling-isolated", isDirectory: true)
+            : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Dockling", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }()

@@ -18,13 +18,15 @@ final class Voice: NSObject {
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async {
                 guard status == .authorized else {
-                    denied("Нет доступа к распознаванию речи. Разреши его: Системные настройки → Конфиденциальность и безопасность → Распознавание речи.")
+                    denied(tr("Нет доступа к распознаванию речи. Разреши его: Системные настройки → Конфиденциальность и безопасность → Распознавание речи.",
+                               "No access to speech recognition. Allow it in System Settings → Privacy & Security → Speech Recognition."))
                     return
                 }
                 AVCaptureDevice.requestAccess(for: .audio) { ok in
                     DispatchQueue.main.async {
                         guard ok else {
-                            denied("Нет доступа к микрофону. Разреши его: Системные настройки → Конфиденциальность и безопасность → Микрофон.")
+                            denied(tr("Нет доступа к микрофону. Разреши его: Системные настройки → Конфиденциальность и безопасность → Микрофон.",
+                                       "No access to the microphone. Allow it in System Settings → Privacy & Security → Microphone."))
                             return
                         }
                         self.begin(denied: denied)
@@ -35,9 +37,10 @@ final class Voice: NSObject {
     }
 
     private func begin(denied: (String) -> Void) {
-        let language = Locale.preferredLanguages.first?.hasPrefix("ru") == false ? Locale.current : Locale(identifier: "ru-RU")
+        // Russian for the Russian interface; otherwise the Mac's own language, which is what the user most likely speaks.
+        let language = Language.isRussian ? Locale(identifier: "ru-RU") : Locale.current
         guard let recognizer = SFSpeechRecognizer(locale: language) ?? SFSpeechRecognizer(), recognizer.isAvailable else {
-            denied("Распознавание речи сейчас недоступно.")
+            denied(tr("Распознавание речи сейчас недоступно.", "Speech recognition isn't available right now."))
             return
         }
         stopEngine()
@@ -53,7 +56,7 @@ final class Voice: NSObject {
             engine.prepare()
             try engine.start()
         } catch {
-            denied("Не получилось включить микрофон.")
+            denied(tr("Не получилось включить микрофон.", "Couldn't turn on the microphone."))
             return
         }
         self.engine = engine
@@ -106,8 +109,9 @@ final class Voice: NSObject {
         let utterance = AVSpeechUtterance(string: String(text.prefix(1500)))
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(text)
-        let code = recognizer.dominantLanguage?.rawValue ?? "ru"
-        utterance.voice = AVSpeechSynthesisVoice(language: code == "ru" ? "ru-RU" : code) ?? AVSpeechSynthesisVoice(language: "ru-RU")
+        let fallback = Language.isRussian ? "ru-RU" : "en-US"
+        let code = recognizer.dominantLanguage?.rawValue ?? String(fallback.prefix(2))
+        utterance.voice = AVSpeechSynthesisVoice(language: code == "ru" ? "ru-RU" : code) ?? AVSpeechSynthesisVoice(language: fallback)
         synth.speak(utterance)
     }
 

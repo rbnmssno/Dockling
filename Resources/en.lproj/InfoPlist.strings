@@ -1,0 +1,7 @@
+"CFBundleDisplayName" = "Dockling";
+"CFBundleName" = "Dockling";
+"NSCalendarsFullAccessUsageDescription" = "Dockling reads your calendar to remind you of meetings ten minutes ahead and to answer questions about your day.";
+"NSCalendarsUsageDescription" = "Dockling reads your calendar to remind you of meetings ten minutes ahead and to answer questions about your day.";
+"NSDesktopFolderUsageDescription" = "Dockling looks at the Desktop to notice new screenshots and offer to ask about them.";
+"NSMicrophoneUsageDescription" = "The microphone is used only while you hold the button and ask a question by voice.";
+"NSSpeechRecognitionUsageDescription" = "Speech recognition turns a spoken question into text for Claude.";

@@ -44,18 +44,18 @@ final class Integrations {
             case .disconnected: brain.react("charge_off")
             case .low(let percent):
                 brain.upset()
-                brain.notify(Card(icon: .battery, color: Card.red, text: "Осталось \(percent)% заряда", duration: 6, tag: "battery"))
+                brain.notify(Card(icon: .battery, color: Card.red, text: tr("Осталось \(percent)% заряда", "\(percent)% battery left"), duration: 6, tag: "battery"))
             }
         }
 
         // Calendar: meetings 10 minutes ahead, and today's list for the chat.
         calendar.onSoon = { event in
             guard self.app.prefs.calendarReminders else { return }
-            var card = Card(icon: .calendar, color: Card.blue, text: event.title, meta: event.when + ", через 10 мин", hold: true, call: true, tag: "meeting")
+            var card = Card(icon: .calendar, color: Card.blue, text: event.title, meta: event.when + tr(", через 10 мин", ", in 10 min"), hold: true, call: true, tag: "meeting")
             card.duration = 14
             var actions: [CardAction] = []
-            if let url = event.link { actions.append(CardAction(title: "Открыть", primary: true) { NSWorkspace.shared.open(url) }) }
-            actions.append(CardAction(title: "Позже") { self.calendar.snooze(event, minutes: 5) })
+            if let url = event.link { actions.append(CardAction(title: tr("Открыть", "Open"), primary: true) { NSWorkspace.shared.open(url) }) }
+            actions.append(CardAction(title: tr("Позже", "Later")) { self.calendar.snooze(event, minutes: 5) })
             card.actions = actions
             brain.notify(card)
         }
@@ -63,10 +63,10 @@ final class Integrations {
         if app.prefs.calendarReminders && !dev { calendar.start() }
         app.chat.context = { [weak self] in
             let f = DateFormatter()
-            f.locale = Locale(identifier: "ru_RU")
-            f.dateFormat = "EEEE, d MMMM, HH:mm"
-            var line = "Сейчас " + f.string(from: Date())
-            if let agenda = self?.calendar.todayText(), !agenda.isEmpty { line += ". Календарь на сегодня: " + agenda }
+            f.locale = Language.locale
+            f.setLocalizedDateFormatFromTemplate("EEEEdMMMMjmm")
+            var line = tr("Сейчас ", "Now: ") + f.string(from: Date())
+            if let agenda = self?.calendar.todayText(), !agenda.isEmpty { line += tr(". Календарь на сегодня: ", ". Today's calendar: ") + agenda }
             return line
         }
 
@@ -75,8 +75,8 @@ final class Integrations {
             screenshots = ScreenshotWatcher { url in
                 guard self.app.prefs.screenshotOffers, self.app.petVisible else { return }
                 Log.note("screenshot file seen")
-                brain.notify(Card(icon: .camera, color: Card.blue, text: "Скриншот сохранён", meta: "Спросить про него?",
-                                  actions: [CardAction(title: "Спросить", primary: true) { self.app.chat.attachFiles([url]) }, CardAction(title: "Нет") {}],
+                brain.notify(Card(icon: .camera, color: Card.blue, text: tr("Скриншот сохранён", "Screenshot saved"), meta: tr("Спросить про него?", "Ask about it?"),
+                                  actions: [CardAction(title: tr("Спросить", "Ask"), primary: true) { self.app.chat.attachFiles([url]) }, CardAction(title: tr("Нет", "No")) {}],
                                   duration: 9, tag: "screenshot"))
             }
         }
@@ -84,18 +84,18 @@ final class Integrations {
             // With the chat open the card lands in the chat itself, with the same buttons.
             guard self.app.prefs.screenshotOffers, self.app.petVisible else { return }
             Log.note("screenshot on clipboard seen")
-            brain.notify(Card(icon: .camera, color: Card.blue, text: "Скриншот в буфере", meta: "Спросить про него?",
-                              actions: [CardAction(title: "Спросить", primary: true) { self.app.chat.attachImage(image, label: "Скриншот из буфера") },
-                                        CardAction(title: "Нет") {}],
+            brain.notify(Card(icon: .camera, color: Card.blue, text: tr("Скриншот в буфере", "Screenshot copied"), meta: tr("Спросить про него?", "Ask about it?"),
+                              actions: [CardAction(title: tr("Спросить", "Ask"), primary: true) { self.app.chat.attachImage(image, label: ChatController.clipboardScreenshotLabel) },
+                                        CardAction(title: tr("Нет", "No")) {}],
                               duration: 9, tag: "screenshot"))
         }
         if !dev || CommandLine.arguments.contains("--clipboard") { clipboard.start() }
 
-        // "Спросить призрака" and "Перевести с призраком" in the Services menu of any app.
-        services.ask = { text in self.app.chat.attachText(text, label: "Выделено") }
+        // "Ask the Ghost" and "Translate with the Ghost" in the Services menu of any app (ServicesMenu.strings).
+        services.ask = { text in self.app.chat.attachText(text, label: tr("Выделено", "Selection")) }
         services.translate = { text in
-            self.app.chat.attachText(text, label: "Выделено")
-            self.app.chat.send("Переведи этот текст.")
+            self.app.chat.attachText(text, label: tr("Выделено", "Selection"))
+            self.app.chat.send(ChatController.translatePrompt)
         }
         NSApp.servicesProvider = services
         NSUpdateDynamicServices()
@@ -243,8 +243,9 @@ final class CalendarWatcher {
 
     private func upcoming(_ e: EKEvent) -> Upcoming {
         let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return Upcoming(id: e.eventIdentifier ?? UUID().uuidString, title: e.title ?? "Встреча", when: f.string(from: e.startDate), link: Self.link(in: e))
+        f.locale = Language.locale
+        f.setLocalizedDateFormatFromTemplate("jmm")
+        return Upcoming(id: e.eventIdentifier ?? UUID().uuidString, title: e.title ?? tr("Встреча", "Meeting"), when: f.string(from: e.startDate), link: Self.link(in: e))
     }
 
     /// A video call link from the event, if it has one.
@@ -261,7 +262,8 @@ final class CalendarWatcher {
         let cal = Calendar.current
         let start = cal.startOfDay(for: Date())
         let f = DateFormatter()
-        f.dateFormat = "HH:mm"
+        f.locale = Language.locale
+        f.setLocalizedDateFormatFromTemplate("jmm")
         return events(from: start, to: start.addingTimeInterval(86400)).map { f.string(from: $0.startDate) + " " + ($0.title ?? "") }.joined(separator: "; ")
     }
 }
@@ -343,7 +345,7 @@ final class ScreenshotWatcher {
 
 // MARK: - Services menu
 
-/// Handles "Спросить призрака" and "Перевести с призраком" from the Services menu.
+/// Handles "Ask the Ghost" and "Translate with the Ghost" from the Services menu.
 final class ServiceProvider: NSObject {
     var ask: ((String) -> Void)?
     var translate: ((String) -> Void)?

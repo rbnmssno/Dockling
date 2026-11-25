@@ -27,7 +27,7 @@ final class HookInstaller: ObservableObject {
             var root: [String: Any] = [:]
             if let data = try? Data(contentsOf: settingsURL) {
                 guard let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    problem = "~/.claude/settings.json не читается как JSON, поэтому я его не трогаю."
+                    problem = tr("~/.claude/settings.json не читается как JSON, поэтому я его не трогаю.", "~/.claude/settings.json isn't valid JSON, so Dockling leaves it alone.")
                     return
                 }
                 root = parsed
@@ -57,7 +57,7 @@ final class HookInstaller: ObservableObject {
             let out = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             try out.write(to: settingsURL, options: .atomic)
         } catch {
-            problem = "Не получилось изменить ~/.claude/settings.json."
+            problem = tr("Не получилось изменить ~/.claude/settings.json.", "Couldn't change ~/.claude/settings.json.")
             Log.error("hook install failed: \(error)")
         }
         refresh()
@@ -206,8 +206,8 @@ final class ClaudeCodeWatcher {
             let s = sessions[id]
             sessions[id]?.state = .idle
             brain?.upset()
-            brain?.notify(Card(icon: .fail, color: Card.red, text: "Claude остановился с ошибкой", meta: s?.project,
-                               actions: [CardAction(title: "Открыть", primary: true) { [weak self] in self?.openProject(s?.cwd) }],
+            brain?.notify(Card(icon: .fail, color: Card.red, text: tr("Claude остановился с ошибкой", "Claude stopped with an error"), meta: s?.project,
+                               actions: [CardAction(title: tr("Открыть", "Open"), primary: true) { [weak self] in self?.openProject(s?.cwd) }],
                                duration: 6.4, tag: "cc-fail"))
         case "SessionEnd":
             sessions[id] = nil
@@ -227,17 +227,17 @@ final class ClaudeCodeWatcher {
     private func finished(session: Session?, message: String?) {
         guard let session else { return }
         let sawStart = session.state != .idle
-        let meta = sawStart ? "\(session.project) · \(max(1, Int(Date().timeIntervalSince(session.since) / 60))) мин" : session.project
+        let meta = sawStart ? "\(session.project) · " + durationText(minutes: max(1, Int(Date().timeIntervalSince(session.since) / 60))) : session.project
         brain?.react("done")
         brain?.notify(Card(icon: .done, color: Card.green, text: Self.summary(message), meta: meta,
-                           actions: [CardAction(title: "Открыть", primary: true) { [weak self] in self?.openProject(session.cwd) }],
+                           actions: [CardAction(title: tr("Открыть", "Open"), primary: true) { [weak self] in self?.openProject(session.cwd) }],
                            duration: 8, tag: "cc-done"))
     }
 
     /// The first sentence of Claude's last message, short enough for a card.
     static func summary(_ text: String?) -> String {
         guard var t = text?.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces), !t.isEmpty else {
-            return "Claude закончил задачу"
+            return tr("Claude закончил задачу", "Claude finished the task")
         }
         t = t.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
         if let end = t.firstIndex(where: { ".!?".contains($0) }) { t = String(t[...end]) }
@@ -267,15 +267,15 @@ final class ClaudeCodeWatcher {
                 if !self.pending.contains(where: { $0.id == item.id }) { self.sessions[item.id]?.state = .work }
                 self.refresh()
             }
-            brain.cards.setStanding(Card(icon: .lock, color: Card.amber, text: first.detail, meta: "\(first.tool) · \(session?.project ?? "Claude Code")" + (more > 0 ? " · ещё \(more)" : ""),
+            brain.cards.setStanding(Card(icon: .lock, color: Card.amber, text: first.detail, meta: "\(first.tool) · \(session?.project ?? "Claude Code")" + (more > 0 ? tr(" · ещё \(more)", " · \(more) more") : ""),
                                          mono: true,
-                                         actions: [CardAction(title: "Разрешить", primary: true) { answer("allow") },
-                                                   CardAction(title: "Отклонить") { answer("deny") },
-                                                   CardAction(title: "В VS Code") { answer(nil) }],
+                                         actions: [CardAction(title: tr("Разрешить", "Allow"), primary: true) { answer("allow") },
+                                                   CardAction(title: tr("Отклонить", "Deny")) { answer("deny") },
+                                                   CardAction(title: tr("В VS Code", "In VS Code")) { answer(nil) }],
                                          sticky: true, hold: true, tag: "cc-question"))
         } else if let waiting = sessions.values.first(where: { $0.state == .wait }) {
-            brain.cards.setStanding(Card(icon: .code, color: Card.amber, text: "Claude ждёт ответа", meta: waiting.project,
-                                         actions: [CardAction(title: "Открыть", primary: true) { [weak self] in self?.openProject(waiting.cwd) }],
+            brain.cards.setStanding(Card(icon: .code, color: Card.amber, text: tr("Claude ждёт ответа", "Claude is waiting for you"), meta: waiting.project,
+                                         actions: [CardAction(title: tr("Открыть", "Open"), primary: true) { [weak self] in self?.openProject(waiting.cwd) }],
                                          sticky: true, hold: true, tag: "cc-question"))
         } else {
             brain.cards.setStanding(nil)

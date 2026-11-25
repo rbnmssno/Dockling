@@ -23,6 +23,7 @@ strip -x "$APP/Contents/MacOS/Dockling"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 cp Resources/GhostPixel.ttf Resources/GhostPixel-OFL.txt "$APP/Contents/Resources/"
+cp -R Resources/en.lproj Resources/ru.lproj "$APP/Contents/Resources/"
 # The character is built in: Resources/Skin holds sheet.png and sheet.json.
 [ -f Resources/Skin/sheet.png ] && [ -f Resources/Skin/sheet.json ] || { echo "Resources/Skin/sheet.png or sheet.json missing"; exit 1; }
 mkdir -p "$APP/Contents/Resources/Skin"

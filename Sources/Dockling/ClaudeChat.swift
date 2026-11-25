@@ -31,7 +31,10 @@ final class ClaudeChat {
     private var history: [(user: Bool, text: String)] = []
     private var carryOver = false
 
-    static let rules = """
+    /// The system prompt, in the interface language. The pet answers in whatever language the user writes in.
+    static let rules = tr(russianRules, englishRules)
+
+    private static let russianRules = """
     Ты Claude в образе маленького пиксельного призрака в чёрном капюшоне. Он живёт на Dock у пользователя на Mac как настольный питомец, \
     и с ним разговаривают в маленьком окошке. Ты только разговариваешь: у тебя нет доступа к файлам, терминалу и интернету, \
     но тебе могут прислать текст, файл или скриншот прямо в сообщении. Отвечай на языке собеседника, по умолчанию по-русски. \
@@ -39,6 +42,16 @@ final class ClaudeChat {
     Не используй эмодзи и разметку Markdown: текст показывается как есть в маленьком пузыре. \
     В начале сообщения может стоять строка в квадратных скобках с текущим временем и календарём пользователя: это справка для тебя, \
     а не слова пользователя.
+    """
+
+    private static let englishRules = """
+    You are Claude in the shape of a small pixel ghost in a black hood. He lives on the user's Dock on their Mac as a desktop pet, \
+    and people talk to him in a small window. You only talk: you have no access to files, the terminal or the internet, \
+    but you may be sent text, a file or a screenshot right in the message. Reply in the language the user writes in, English by default. \
+    Keep replies short: one to three sentences unless asked for more. Be to the point, calm, sometimes a little wry. \
+    Do not use emoji or Markdown: the text is shown as is in a small bubble. \
+    A message may begin with a line in square brackets holding the current time and the user's calendar: that is reference for you, \
+    not the user's words.
     """
 
     var isRunning: Bool { process?.isRunning == true }
@@ -78,8 +91,8 @@ final class ClaudeChat {
         guard ensureProcess() else { return }
         var message = text
         if carryOver, !history.isEmpty {
-            let earlier = history.suffix(12).map { ($0.user ? "Пользователь: " : "Ты: ") + $0.text }.joined(separator: "\n")
-            message = "[Начало этого разговора, для памяти:\n" + earlier + "]\n\n" + text
+            let earlier = history.suffix(12).map { ($0.user ? tr("Пользователь: ", "User: ") : tr("Ты: ", "You: ")) + $0.text }.joined(separator: "\n")
+            message = tr("[Начало этого разговора, для памяти:\n", "[The start of this conversation, for memory:\n") + earlier + "]\n\n" + text
             carryOver = false
         }
         var content: [[String: Any]] = []
@@ -129,7 +142,7 @@ final class ClaudeChat {
     private func ensureProcess() -> Bool {
         if process?.isRunning == true { return true }
         guard let binary = Self.locate(custom: binaryOverride()) else {
-            onEvent?(.failed("Не нашёл Claude Code. Установи его или укажи путь в настройках."))
+            onEvent?(.failed(tr("Не нашёл Claude Code. Установи его или укажи путь в настройках.", "Claude Code not found. Install it or set its path in Settings.")))
             return false
         }
         let p = Process()
@@ -166,14 +179,14 @@ final class ClaudeChat {
                 self.carryOver = true
                 if self.replying {
                     self.replying = false
-                    self.onEvent?(.failed(self.reply.isEmpty ? "Claude Code закрылся. Напиши ещё раз." : self.reply))
+                    self.onEvent?(.failed(self.reply.isEmpty ? tr("Claude Code закрылся. Напиши ещё раз.", "Claude Code quit. Try again.") : self.reply))
                 }
             }
         }
         do {
             try p.run()
         } catch {
-            onEvent?(.failed("Claude Code не запустился."))
+            onEvent?(.failed(tr("Claude Code не запустился.", "Claude Code didn't start.")))
             Log.error("claude launch failed: \(error)")
             return false
         }
@@ -232,9 +245,10 @@ final class ClaudeChat {
     private static func explain(_ text: String) -> String {
         let lower = text.lowercased()
         if lower.contains("login") || lower.contains("auth") || lower.contains("api key") {
-            return "Claude Code не вошёл в аккаунт. Открой Claude Code и войди в свою подписку, потом напиши ещё раз."
+            return tr("Claude Code не вошёл в аккаунт. Открой Claude Code и войди в свою подписку, потом напиши ещё раз.",
+                      "Claude Code isn't signed in. Open Claude Code, sign in with your subscription, then try again.")
         }
-        if lower.contains("limit") { return "Лимит Claude закончился. Он обновится позже." }
-        return "Claude Code ответил ошибкой: " + text.prefix(160)
+        if lower.contains("limit") { return tr("Лимит Claude закончился. Он обновится позже.", "You've reached your Claude limit. It resets later.") }
+        return tr("Claude Code ответил ошибкой: ", "Claude Code returned an error: ") + text.prefix(160)
     }
 }

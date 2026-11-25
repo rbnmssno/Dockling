@@ -1,0 +1,7 @@
+"CFBundleDisplayName" = "Dockling";
+"CFBundleName" = "Dockling";
+"NSCalendarsFullAccessUsageDescription" = "Календарь нужен, чтобы напоминать о встречах за 10 минут и отвечать, что у тебя сегодня.";
+"NSCalendarsUsageDescription" = "Календарь нужен, чтобы напоминать о встречах за 10 минут и отвечать, что у тебя сегодня.";
+"NSDesktopFolderUsageDescription" = "Доступ к рабочему столу нужен, чтобы замечать новые скриншоты и предлагать спросить про них.";
+"NSMicrophoneUsageDescription" = "Микрофон нужен, только пока ты держишь кнопку и задаёшь вопрос голосом.";
+"NSSpeechRecognitionUsageDescription" = "Распознавание речи превращает голосовой вопрос в текст для Claude.";

@@ -31,10 +31,14 @@ final class ChatModel: ObservableObject {
     @Published var listening = false
     @Published var attachment: ChatAttachment?
     @Published var limits = PlanLimits()
-    @Published var status = "на связи"
+    @Published var status = ChatModel.online
     @Published var avatar: NSImage?
     /// How sharply the screen behind the glass shows through (0..1), from the transparency setting.
     @Published var clarity: Double = 0
+
+    /// The status line under the title while Claude Code is found.
+    static let online = tr("на связи", "online")
+    static let noClaude = tr("нет claude code", "no claude code")
 
     enum ButtonMode { case mic, send, stop, listen }
     var buttonMode: ButtonMode {
@@ -130,7 +134,7 @@ struct ChatView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("GHOST").font(.pixel(16))
                 Text(model.status.uppercased()).font(.pixel(11))
-                    .foregroundStyle(model.status == "на связи" ? Color.green : dim)
+                    .foregroundStyle(model.status == ChatModel.online ? Color.green : dim)
             }
             Spacer()
             Button(action: close) {
@@ -138,7 +142,7 @@ struct ChatView: View {
                     .frame(width: 28, height: 28).background(field, in: PixelRect(step: 3))
             }
             .buttonStyle(.plain)
-            .help("Закрыть")
+            .help(tr("Закрыть", "Close"))
         }
         .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
     }
@@ -146,8 +150,8 @@ struct ChatView: View {
     private var limits: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 14) {
-                limitRow("Сессия", model.limits.session)
-                limitRow("Неделя", model.limits.week)
+                limitRow(tr("Сессия", "Session"), model.limits.session)
+                limitRow(tr("Неделя", "Week"), model.limits.week)
             }
             Text(limitNote).font(.system(size: 11)).foregroundStyle(dim).lineLimit(1)
         }
@@ -163,10 +167,10 @@ struct ChatView: View {
     }
 
     private var limitNote: String {
-        guard let reset = model.limits.sessionReset else { return "Лимиты появятся после первого ответа." }
+        guard let reset = model.limits.sessionReset else { return tr("Лимиты появятся после первого ответа.", "Limits appear after the first reply.") }
         let mins = Int(reset.timeIntervalSinceNow / 60)
-        if mins < 1 { return "Лимит сессии уже обновился, цифры уточнятся со следующим ответом." }
-        return "Сессия обновится через " + (mins >= 60 ? "\(mins / 60) ч \(mins % 60) мин." : "\(mins) мин.")
+        if mins < 1 { return tr("Лимит сессии уже обновился, цифры уточнятся со следующим ответом.", "The session limit has reset; the numbers update with the next reply.") }
+        return tr("Сессия обновится через ", "Session resets in ") + durationText(minutes: mins) + "."
     }
 
     private func limitRow(_ label: String, _ value: Double?) -> some View {
@@ -266,7 +270,7 @@ struct ChatView: View {
 
     private var inputRow: some View {
         HStack(spacing: 7) {
-            TextField(model.listening ? "Слушаю…" : "Спроси что-нибудь", text: $model.input)
+            TextField(model.listening ? tr("Слушаю…", "Listening…") : tr("Спроси что-нибудь", "Ask anything"), text: $model.input)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .focused($focused)
@@ -315,7 +319,7 @@ private struct ActionButton: View {
                         }
                     }
             )
-            .help(mode == .send ? "Отправить" : mode == .stop ? "Остановить ответ" : "Зажми и говори")
+            .help(mode == .send ? tr("Отправить", "Send") : mode == .stop ? tr("Остановить ответ", "Stop the reply") : tr("Зажми и говори", "Hold to talk"))
     }
 }
 

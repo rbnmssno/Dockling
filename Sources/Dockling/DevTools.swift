@@ -4,6 +4,8 @@ import Speech
 
 /// Development switches:
 ///   --log                 print what happens
+///   --isolated            a test copy beside the user's own Dockling: its own settings (app.dockling.Dockling.test)
+///                         and its own data folder in the temporary directory, so the running pet is left alone
 ///   --skin <folder>       use sheet.png and sheet.json from a folder, without touching the settings
 ///   --demo <name>         run a scenario: walk, chat, cards, sleep, drop
 ///   --quit-after <sec>    leave after a while
@@ -12,6 +14,7 @@ import Speech
 enum DevTools {
     /// A scripted run: no strolls of his own and no clipboard offers, so only the script shows.
     static var scripted = false
+    static let isolated = CommandLine.arguments.contains("--isolated")
     static var showcase: String? { value(after: "--showcase") }
 
     static func value(after flag: String) -> String? {
@@ -41,19 +44,19 @@ enum DevTools {
             after(1) { brain.walk(to: app.stage.centerX - 200) }
         case "chat":
             after(1) { app.chat.open() }
-            after(2) { app.chat.send(value(after: "--say") ?? "Ответь одним коротким предложением: ты на связи?") }
+            after(2) { app.chat.send(value(after: "--say") ?? tr("Ответь одним коротким предложением: ты на связи?", "Answer in one short sentence: are you there?")) }
         case "remind":
             // Asked in the chat, then the chat closes; the reminder comes as a card.
             after(1) { app.chat.open() }
-            after(1.5) { app.chat.send(value(after: "--say") ?? "напомни через 4 сек проверка напоминания") }
+            after(1.5) { app.chat.send(value(after: "--say") ?? tr("напомни через 4 сек проверка напоминания", "remind me in 4 seconds to check the reminder")) }
             after(2.5) { Log.debug("chat says: \(app.chat.model.messages.last?.text ?? "-")"); app.chat.close() }
         case "cards":
-            after(1) { brain.notify(Card(icon: .done, color: Card.green, text: "Собрал окно чата и подключил лимиты", meta: "Dockling · 4 мин", actions: [CardAction(title: "Открыть", primary: true) {}], duration: 4)) }
+            after(1) { brain.notify(Card(icon: .done, color: Card.green, text: tr("Собрал окно чата и подключил лимиты", "Built the chat window and hooked up the limits"), meta: tr("Dockling · 4 мин", "Dockling · 4 min"), actions: [CardAction(title: tr("Открыть", "Open"), primary: true) {}], duration: 4)) }
             after(5.5) {
                 brain.cards.setStanding(Card(icon: .lock, color: Card.amber, text: "npm test", meta: "Bash · Monobrow", mono: true,
-                                             actions: [CardAction(title: "Разрешить", primary: true) {}, CardAction(title: "Отклонить") {}], sticky: true, hold: true, tag: "cc-question"))
+                                             actions: [CardAction(title: tr("Разрешить", "Allow"), primary: true) {}, CardAction(title: tr("Отклонить", "Deny")) {}], sticky: true, hold: true, tag: "cc-question"))
             }
-            after(7) { brain.notify(Card(icon: .battery, color: Card.red, text: "Осталось 5% заряда", duration: 2)) }
+            after(7) { brain.notify(Card(icon: .battery, color: Card.red, text: tr("Осталось 5% заряда", "5% battery left"), duration: 2)) }
             after(10) { brain.cards.setStanding(nil) }
         case "sleep":
             after(1) { brain.setAsleep(true) }
@@ -127,8 +130,8 @@ enum DevTools {
             let darkGlass = value(after: "--theme").map { $0 == "dark" } ?? app.prefs.isDark
             var back: NSWindow?
             after(1) {
-                app.chat.model.messages += [ChatMessage(role: .me, text: "Как сделать стекло читаемым?"),
-                                            ChatMessage(role: .bot, text: "Плотнее подложка под текстом и плавное размытие фона.")]
+                app.chat.model.messages += [ChatMessage(role: .me, text: tr("Как сделать стекло читаемым?", "How do I make glass readable?")),
+                                            ChatMessage(role: .bot, text: tr("Плотнее подложка под текстом и плавное размытие фона.", "A denser backing under the text and a soft blur behind it."))]
                 app.chat.open()
             }
             after(1.6) {
