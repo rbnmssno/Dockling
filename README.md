@@ -59,7 +59,7 @@ The chat needs [Claude Code](https://code.claude.com) installed and signed in. T
 
 - Walks along the Dock on its own and stops when the cursor is on it. You can pick it up and drop it.
 - Falls asleep after five minutes without mouse or keyboard input and wakes up when you're back. Waves when the Mac starts or wakes.
-- Steps aside while a video, game or app is in full screen on its screen, as the Dock does, and comes back after. Reminders and meetings that came up meanwhile show then.
+- Lives where the Dock is. When the Dock moves to another display it dives after it. While a video, game or app is in full screen, it stays with the desktop: a swipe to the video carries it away, the swipe back brings it in. Reminders and meetings that came up meanwhile show when it is back.
 - Click it to chat. Your plan's session and weekly limits are at the top of the chat, and a card warns you at 85% and 98%.
 - Drop a file or some text on it, or take a screenshot, and ask about it.
 - Hold ⌥ or the microphone button to ask by voice; the answer is read out.
@@ -104,6 +104,7 @@ Dockling --log                       # print what happens
 Dockling --isolated                  # a test copy beside your own Dockling, with its own settings and data
 Dockling --demo walk                 # also: chat, cards, sleep, work, settings
 Dockling --isolated --showcase DIR   # the pictures and the animation above, on a stage of its own
+Dockling --dock-display external     # his Dock on that display (or main), whatever the real Dock does
 ```
 
 Add `-AppleLanguages '(en)'` or `'(ru)'` to run in one language. The binary is `dist/Dockling.app/Contents/MacOS/Dockling`.
@@ -146,7 +147,7 @@ xattr -dr com.apple.quarantine /Applications/Dockling.app
 
 - Сам гуляет по Dock, останавливается под курсором. Его можно взять мышкой и уронить.
 - Засыпает, если пять минут не трогать мышь и клавиатуру, и просыпается, когда ты вернулся. Машет, когда Mac включается или просыпается.
-- Уходит, пока на его экране видео, игра или приложение во весь экран, как и сам Dock, и возвращается после. Напоминания и встречи, которые пришлись на это время, покажет тогда.
+- Живёт там, где Dock. Dock переехал на другой монитор — ныряет за ним. Пока открыто видео, игра или приложение во весь экран, держится рабочего стола: смахнул на видео — уехал вместе со столом, смахнул обратно — уже на месте. Напоминания и встречи, которые пришлись на это время, покажет, когда вернётся.
 - По клику открывает чат. Сверху видны лимиты подписки за сессию и за неделю, на 85% и 98% придёт карточка.
 - Можно бросить на него файл или текст, сделать скриншот и спросить про них.
 - Если зажать ⌥ или кнопку микрофона, можно спросить голосом, ответ он прочитает вслух.

@@ -23,6 +23,13 @@ enum DockGeometry {
         // The README showcase plays on a Dock of its own.
         if let stage = Showcase.stage { return stage }
         let screens = NSScreen.screens
+        // Development: `--dock-display main|external` puts his Dock on that display.
+        if let which = DevTools.value(after: "--dock-display"),
+           let s = which == "main" ? screens.first : screens.first(where: { $0 != screens.first }) {
+            let tile = CGFloat(UserDefaults(suiteName: "com.apple.dock")?.double(forKey: "tilesize") ?? 0)
+            let width = estimatedWidth(dock: UserDefaults(suiteName: "com.apple.dock"), orientation: "bottom")
+            return DockInfo(screen: s.frame, floorY: s.frame.minY + (tile > 0 ? tile : 64) + 20, minX: s.frame.midX - width / 2, maxX: s.frame.midX + width / 2)
+        }
         let dock = UserDefaults(suiteName: "com.apple.dock")
         // The Dock's screen is the display holding the Dock's own screen-sized window. The screens'
         // usable areas can keep the Dock's cut on the old display after the Dock moved, so they only
@@ -30,7 +37,9 @@ enum DockGeometry {
         // window is gone; the display it was last seen on still counts.
         let bottomInset = { (s: NSScreen) in s.visibleFrame.minY - s.frame.minY }
         let byInset = screens.filter { bottomInset($0) > 20 }.max(by: { bottomInset($0) < bottomInset($1) })
-        let byWindow = (dockDisplay() ?? lastDockDisplay).flatMap { id in screens.first { $0.displayID == id } }
+        var byWindow = (dockDisplay() ?? lastDockDisplay).flatMap { id in screens.first { $0.displayID == id } }
+        // Never seen yet and gone from every screen: a full-screen app hides it, so it is where one covers.
+        if byWindow == nil { byWindow = screens.first { FullScreen.covers($0.frame) } }
         let dockScreen = byWindow ?? byInset ?? NSScreen.main ?? screens[0]
         let frame = dockScreen.frame
         var inset = bottomInset(dockScreen)

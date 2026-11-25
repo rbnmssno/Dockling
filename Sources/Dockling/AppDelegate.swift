@@ -88,10 +88,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
 
     // MARK: - Layout
 
-    /// Puts the strip over the Dock's screen and the character on the Dock.
+    /// Puts the strip over the Dock's screen and the character on the Dock. When the Dock went to
+    /// another display he follows it: down below the edge here, up from below the edge there.
     func layout(initial: Bool = false) {
         // In full screen the Dock is hidden and the screen's areas change; he keeps his place meanwhile.
         if !initial, updateAway() { return }
+        guard !following else { return }
         let old = brain.dock
         let dock = DockGeometry.current()
         let movedScreen = !initial && old.screen != dock.screen
@@ -100,7 +102,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         if movedScreen {
             Log.debug("dock moved to screen \(dock.screen)")
             brain.stopWalking()
+            if petPanel.isVisible {
+                following = true
+                stage.dive { [weak self] in
+                    guard let self else { return }
+                    self.following = false
+                    self.apply(DockGeometry.current(), initial: false, movedScreen: true, along: along)
+                }
+                return
+            }
         }
+        apply(dock, initial: initial, movedScreen: movedScreen, along: along)
+    }
+
+    /// True while he is on his way to the Dock on another display.
+    private var following = false
+
+    private func apply(_ dock: DockInfo, initial: Bool, movedScreen: Bool, along: CGFloat) {
         brain.dock = dock
         let height = min(dock.screen.height, dock.floorY - dock.screen.minY + 480)
         let strip = CGRect(x: dock.screen.minX, y: dock.screen.minY, width: dock.screen.width, height: height)
@@ -112,7 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
             stage.place(x: dock.maxX - dock.screen.minX - stage.spriteSize.width / 2 - 30)
         } else if movedScreen {
             // Same spot on the Dock, now on the other display.
-            stage.place(x: dock.minX + (dock.maxX - dock.minX) * along - dock.screen.minX)
+            let x = dock.minX + (dock.maxX - dock.minX) * along - dock.screen.minX
+            if petPanel.isVisible { stage.surface(at: x) } else { stage.place(x: x) }
             brain.settle()
         }
         brain.clampToDock()
@@ -126,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
     }
 
     // The Dock can move to another display without any notice to apps. With two or more displays a
-    // cheap look every two seconds (one window lookup) catches it; with one display nothing runs.
+    // cheap look twice a second (one window lookup) catches it; with one display nothing runs.
     private var dockWatch: DispatchSourceTimer?
     private var dockSignature = ""
 
@@ -143,7 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         }
         guard dockWatch == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 2, repeating: 2, leeway: .seconds(1))
+        timer.schedule(deadline: .now() + 0.5, repeating: 0.5, leeway: .milliseconds(250))
         timer.setEventHandler { [weak self] in
             guard let self, Self.dockSignature() != self.dockSignature else { return }
             self.layout()
@@ -163,6 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         let ws = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
             ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.scheduleLayout() }
+        }
+        NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: petPanel, queue: .main) { [weak self] _ in
+            self?.occlusionChanged()
         }
         // Going full screen, or swiping to a full-screen app, changes the Space; a game can also cover
         // the screen when it starts.
@@ -270,15 +292,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
             guard mine == spaceChanges else { return }
             let nowAway = updateAway()
             if nowAway != wasAway { return }
-            if n == 0 {
-                // Settled on another desktop: kept to one desktop, he follows. Not earlier, because in
-                // the middle of a switch to a full-screen app this would carry him onto it.
-                if !nowAway, oneDesktop, !petPanel.isOnActiveSpace { showPet() }
+            // Kept to one desktop and now on another desktop: he follows. Not before 0.4 s of clear
+            // looks: the window list shows a full-screen app about 0.2 s after a switch to it, and
+            // following then would carry him onto it.
+            if !nowAway, oneDesktop, !petPanel.isOnActiveSpace, n <= 22 {
+                showPet()
                 return
             }
+            if n == 0 { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { look(n - 1) }
         }
         look(30)
+    }
+
+    /// macOS hides a window that is on every Space as soon as a switch to another Space starts, about
+    /// half a second before it tells apps about the switch, and shows it again when the switch ends,
+    /// on top of a full-screen app too. So when a full-screen app has a Space on his screen, this is
+    /// the moment to keep him to the desktop he is leaving: he stays there, and is there again the
+    /// moment the user swipes back. Plain switches between desktops are left to macOS.
+    private func occlusionChanged() {
+        guard DevTools.showcase == nil, !petPanel.occlusionState.contains(.visible), petPanel.isVisible,
+              !userHidden, !away, !oneDesktop, FullScreen.exists(on: brain.dock.screen) else { return }
+        setOneDesktop(true)
     }
 
     /// An app came to the front: it may fill the screen without a Space of its own (some games).

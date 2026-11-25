@@ -266,11 +266,43 @@ final class PetStage: NSView {
     }
 
     /// Freezes the character where it is now on screen.
+    /// The Dock left this screen: he goes down below its edge after it, then `completion` runs.
+    func dive(completion: @escaping () -> Void) {
+        stopMoving()
+        let from = sprite.position.y
+        let below = -sprite.bounds.height - 4
+        sprite.position.y = below
+        let a = CABasicAnimation(keyPath: "position.y")
+        a.fromValue = from
+        a.toValue = below
+        a.duration = 0.24
+        a.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        sprite.add(a, forKey: "dive")
+        Log.debug("dive from \(Int(from))")
+        walkEnd.schedule(after: a.duration) { completion() }
+    }
+
+    /// The Dock came to this screen: he comes up from below its edge onto the Dock at `x`.
+    func surface(at x: CGFloat) {
+        stopMoving()
+        sprite.position = CGPoint(x: x, y: standY)
+        let a = CABasicAnimation(keyPath: "position.y")
+        a.fromValue = -sprite.bounds.height - 4
+        a.toValue = standY
+        a.duration = 0.34
+        a.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.25, 1)
+        sprite.add(a, forKey: "surface")
+        Log.debug("surface at \(Int(x))")
+        walkEnd.schedule(after: a.duration) { [weak self] in self?.updateHoverArea() }
+    }
+
     func stopMoving() {
         let moving = walkEnd.isPending
         if let p = sprite.presentation()?.position { sprite.position = p }
         sprite.removeAnimation(forKey: "walk")
         sprite.removeAnimation(forKey: "fall")
+        sprite.removeAnimation(forKey: "dive")
+        sprite.removeAnimation(forKey: "surface")
         if moving {
             // Stopped before arriving: the stand-in row must not start later on its own.
             sprite.removeAnimation(forKey: "arrive")

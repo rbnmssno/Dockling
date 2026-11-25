@@ -7,7 +7,8 @@ import Speech
 ///   --isolated            a test copy beside the user's own Dockling: its own settings (app.dockling.Dockling.test)
 ///                         and its own data folder in the temporary directory, so the running pet is left alone
 ///   --skin <folder>       use sheet.png and sheet.json from a folder, without touching the settings
-///   --demo <name>         run a scenario: walk, chat, cards, sleep, drop
+///   --demo <name>         run a scenario: walk, chat, cards, sleep, drop, follow
+///   --dock-display main|external   his Dock is on that display, whatever the real Dock does
 ///   --quit-after <sec>    leave after a while
 ///   --render <folder>     write offscreen pictures of the cards and the chat
 ///   --showcase <folder>   the README pictures and animation, over a backdrop of our own (see Showcase)
@@ -45,6 +46,12 @@ enum DevTools {
         case "chat":
             after(1) { app.chat.open() }
             after(2) { app.chat.send(value(after: "--say") ?? tr("Ответь одним коротким предложением: ты на связи?", "Answer in one short sentence: are you there?")) }
+        case "follow":
+            // The way he follows the Dock to another display: down below the edge, up again further on.
+            after(1.5) {
+                let to = max(80, app.stage.centerX - 260)
+                app.stage.dive { app.stage.surface(at: to); app.brain.settle() }
+            }
         case "remind":
             // Asked in the chat, then the chat closes; the reminder comes as a card.
             after(1) { app.chat.open() }
