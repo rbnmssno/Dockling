@@ -35,7 +35,13 @@ The selected tab shows how much of your plan you've used. Codex reads this from 
   <img src="docs/demo.gif" width="640" alt="Dockling walking along the Dock, working while Claude Code runs, being carried and opening the chat">
 </p>
 
-While Claude Code works, the pet sits down at a laptop. It brings you permission requests with Allow and Deny buttons and tells you when a task finishes. When the pet stands or sleeps, it uses about 20 MB of memory and 0% CPU.
+Since 1.4.1, the pet also sits at its laptop while Codex works in BB on your Mac, even with Dockling's chat closed. If several tasks are running, it stays at the laptop until the last one finishes.
+
+<p align="center">
+  <img src="docs/codex-in-bb.png" width="92" height="105" alt="Dockling at its laptop with a badge showing four active Codex tasks in BB">
+</p>
+
+Claude Code can also send the pet permission requests with Allow and Deny buttons and let it know when a task finishes.
 
 | Claude Code asks for permission | A meeting in ten minutes |
 |---|---|
@@ -92,6 +98,8 @@ Dockling disables the shell, web search, hooks, plugins and external MCP servers
 
 Claude Code's state comes from hooks. The switch in Settings adds them to `~/.claude/settings.json`, keeps everyone else's hooks and saves a backup of the file first. The hook script hands each event to the app over a local socket. When Dockling isn't running, or the pet is out of sight, Claude Code asks for permissions in its own dialog as usual.
 
+For Codex activity in BB, Dockling checks the local BB task count every few seconds. It reads no conversation content and uses no model tokens. You can turn the animation off in Settings → Codex.
+
 Every animation is a row of the sprite sheet played by Core Animation. The window server draws the frames, so the app does no work while he walks or sleeps.
 
 macOS doesn't tell apps where the Dock is, so its width is worked out from the Dock's own settings: icon size, pinned apps and the apps that are running.
@@ -137,7 +145,7 @@ The pixel font, Ghost Pixel, is [Pixelify Sans](https://github.com/eifetx/Pixeli
 
 ## По-русски
 
-Dockling — пиксельный питомец для Dock на Mac. По клику он открывает чат с Claude или Codex. Пока Claude Code работает, питомец садится за ноутбук, приносит запросы на разрешения и сообщает о завершении задачи. Интерфейс следует языку системы и поддерживает русский и английский.
+Dockling — пиксельный питомец для Dock на Mac. По клику он открывает чат с Claude или Codex. Питомец садится за ноутбук, когда работает Claude Code или когда Codex выполняет задачу в BB. От Claude Code он также приносит запросы на разрешения и сообщает о завершении задачи. Интерфейс следует языку системы и поддерживает русский и английский.
 
 ### Что нового в 1.4
 
@@ -145,7 +153,7 @@ Dockling — пиксельный питомец для Dock на Mac. По кл
 
 Лимиты Codex видны до первого сообщения. Питомец запрашивает у аккаунта ChatGPT процент расхода и время ближайшего сброса. Если аккаунт вернул только недельный лимит, появится одна шкала. Когда расход достигает 85% или 98%, в карточке предупреждения видно, у какого помощника заканчивается лимит.
 
-Ресурсов почти не тратит: 0% процессора, пока стоит или спит, и около 20 МБ памяти.
+С версии 1.4.1 питомец видит работу Codex в BB на этом Mac, даже когда чат Dockling закрыт. Если запустить несколько задач, он встанет из-за ноутбука, когда закончится последняя.
 
 ### Установка
 
@@ -183,6 +191,8 @@ xattr -dr com.apple.quarantine /Applications/Dockling.app
 Codex во вкладке только разговаривает: разговор не сохраняется в его истории, плагины, MCP, хуки, команды и поиск из профиля Codex выключены, нет доступа к файлам пользователя и проектов, лимиты читаются без запроса к модели. Если защиту включить не удалось или Codex вошёл по API-ключу, чат не запускается и объясняет почему. Когда сервис сообщает, что обычные запросы недоступны, Dockling блокирует отправку.
 
 Хуки Claude Code включаются в настройках. Они дописываются в `~/.claude/settings.json`, чужие хуки остаются, копия файла сохраняется рядом.
+
+Для анимации Codex питомец раз в несколько секунд проверяет число активных задач в BB. Содержимое переписки остаётся в BB, лимит Codex на проверку не расходуется. Анимацию можно выключить в «Настройки» → Codex.
 
 Сборка из исходников, режимы для разработки и удаление описаны выше в английской части.
 

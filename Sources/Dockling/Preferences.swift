@@ -39,6 +39,8 @@ final class Preferences: ObservableObject {
         get { Provider(rawValue: store.string(forKey: Key.chatProvider) ?? "") ?? .claude }
         set { store.set(newValue.rawValue, forKey: Key.chatProvider) }
     }
+    /// Sit at the laptop while Codex works in the bb app. On for everyone, including those updating.
+    @Published var bbActivity: Bool { didSet { store.set(bbActivity, forKey: Key.bbActivity) } }
     /// Empty: find Codex on its own.
     @Published var codexPath: String { didSet { store.set(codexPath, forKey: Key.codexPath) } }
     /// Empty: find Claude Code on its own.
@@ -64,6 +66,7 @@ final class Preferences: ObservableObject {
         static let showMenuBarIcon = "showMenuBarIcon"
         static let claudePath = "claudePath"
         static let codexPath = "codexPath"
+        static let bbActivity = "bbActivity"
         static let lastCodexLimits = "lastCodexLimits"
         static let chatProvider = "chatProvider"
         static let didSetUpLoginItem = "didSetUpLoginItem"
@@ -85,6 +88,7 @@ final class Preferences: ObservableObject {
             Key.screenshotOffers: true,
             Key.calendarReminders: true,
             Key.showMenuBarIcon: false,
+            Key.bbActivity: true,
         ])
         theme = ThemeChoice(rawValue: store.string(forKey: Key.theme) ?? "") ?? .auto
         transparency = store.double(forKey: Key.transparency).clamped(0, 100)
@@ -99,6 +103,7 @@ final class Preferences: ObservableObject {
         showMenuBarIcon = store.bool(forKey: Key.showMenuBarIcon)
         claudePath = store.string(forKey: Key.claudePath) ?? ""
         codexPath = store.string(forKey: Key.codexPath) ?? ""
+        bbActivity = store.bool(forKey: Key.bbActivity)
     }
 
     /// Light or dark for the widget's own glass, whatever the theme choice.

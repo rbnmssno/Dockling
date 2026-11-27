@@ -33,12 +33,37 @@ final class PetBrain: PetStageDelegate {
     var talking = false { didSet { if talking != oldValue { settle() } } }
     var thinking = false { didSet { if thinking != oldValue { touch(); settle() } } }
     var music = false { didSet { if music != oldValue { settle() } } }
+    /// Claude Code, from its hooks.
     var claude: ClaudeActivity = .none {
         didSet {
             guard claude != oldValue else { return }
             if claude != .none { wake() }
             settle()
         }
+    }
+    /// Claude Code sessions busy now (working or waiting), from its hooks.
+    var claudeSessions = 0 { didSet { if claudeSessions != oldValue { updateBadge() } } }
+    /// Codex threads working in bb on this Mac.
+    var codex = 0 {
+        didSet {
+            guard codex != oldValue else { return }
+            if codex > 0 && oldValue == 0 { wake() }
+            updateBadge()
+            settle()
+        }
+    }
+
+    /// Claude Code waiting for the user comes first; otherwise he works while any agent works.
+    static func activity(claude: ClaudeActivity, codex: Int) -> ClaudeActivity {
+        if claude == .wait { return .wait }
+        return claude == .work || codex > 0 ? .work : .none
+    }
+    var working: ClaudeActivity { Self.activity(claude: claude, codex: codex) }
+
+    /// The number over his head: every busy agent, shown from two.
+    static func badge(claudeSessions: Int, codex: Int) -> Int {
+        let total = claudeSessions + codex
+        return total >= 2 ? total : 0
     }
     private var sadUntil = Date.distantPast
     /// A full-screen app covers his screen: no strolls, and cards that call for attention wait.
@@ -90,7 +115,7 @@ final class PetBrain: PetStageDelegate {
         if sadUntil > Date() { return "error" }
         if cards.current?.call == true { return "call" }
         if cards.current?.hold == true { return "wait" }
-        switch claude {
+        switch working {
         case .wait: return "wait"
         case .work: return "work"
         case .none: return music ? "music" : "idle"
@@ -253,7 +278,7 @@ final class PetBrain: PetStageDelegate {
         Log.debug("sleep check: idle \(Int(Self.idleTime)) s, calm \(isCalm), base \(base ?? "-")")
         guard Self.idleTime >= Self.sleepAfter else { scheduleSleepCheck(); return }
         // Nobody around, but something is going on (Claude working, a card, the chat, music): look later.
-        guard isCalm, base == "idle", claude == .none else { scheduleSleepCheck(after: 30); return }
+        guard isCalm, base == "idle", working == .none else { scheduleSleepCheck(after: 30); return }
         Log.debug("no input for \(Int(Self.idleTime)) s, dozing off")
         setAsleep(true, dozing: true)
     }
@@ -396,9 +421,8 @@ final class PetBrain: PetStageDelegate {
 
     // MARK: - Events
 
-    /// A number over his head while several Claude Code sessions are busy; 0 hides it.
-    func setBadge(_ count: Int) {
-        stage.setBadge(count)
+    private func updateBadge() {
+        stage.setBadge(Self.badge(claudeSessions: claudeSessions, codex: codex))
     }
 
     func upset(for seconds: TimeInterval = 5.6) {

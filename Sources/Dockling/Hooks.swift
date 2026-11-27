@@ -269,8 +269,7 @@ final class ClaudeCodeWatcher {
         guard let brain else { return }
         let states = sessions.values.map(\.state)
         brain.claude = states.contains(.permission) || states.contains(.wait) ? .wait : states.contains(.work) ? .work : .none
-        let active = sessions.values.filter { $0.state != .idle }.count
-        brain.setBadge(active >= 2 ? active : 0)
+        brain.claudeSessions = sessions.values.filter { $0.state != .idle }.count
 
         if let first = pending.first {
             let session = sessions[first.id]

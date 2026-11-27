@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import EventKit
 import IOKit.ps
 
@@ -14,6 +15,8 @@ final class Integrations {
     private let services = ServiceProvider()
     private let music = MusicWatcher()
     private let clipboard = ClipboardWatcher()
+    private let bb = BBActivityWatcher()
+    private var bbSetting: AnyCancellable?
 
     init(app: AppDelegate) {
         self.app = app
@@ -49,6 +52,15 @@ final class Integrations {
         }
         hookServer.start()
         watchLimits(after: 5)
+
+        // Codex in the bb app: the same laptop as Claude Code, from bb's local thread counter.
+        // Independent of the Claude Code hooks, and it never asks for Claude's limits.
+        bb.enabled = { [unowned app] in app.prefs.bbActivity }
+        bb.onChange = { count in brain.codex = count }
+        bbSetting = app.prefs.$bbActivity.dropFirst().removeDuplicates().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.bb.check() }
+        }
+        bb.start()
 
         // Music: Spotify and Apple Music announce every play and pause.
         music.onChange = { playing in brain.music = playing }

@@ -166,6 +166,9 @@ struct SettingsView: View {
                         }
                         Button(tr("Указать…", "Choose…"), action: pickCodex)
                     }
+                    Toggle(tr("Садиться за ноутбук, пока Codex работает в BB", "Sit at the laptop while Codex works in BB"), isOn: $prefs.bbActivity)
+                    Text(tr("Dockling видит только число активных задач на этом Mac. Лимит Codex на эту проверку не расходуется.", "Dockling reads only the number of active tasks on this Mac. Checking doesn't use your Codex allowance."))
+                        .font(.caption).foregroundStyle(.secondary)
                     Text(tr("Codex только разговаривает: разговор не сохраняется в его истории, плагины, MCP, хуки и команды из твоего профиля Codex выключены, нет доступа к файлам пользователя и проектов. Лимиты читаются без запроса к модели. Платный доступ по API-ключу не используется.", "Codex only talks: the conversation isn't kept in its history, the plugins, MCP servers, hooks and commands from your Codex profile are off, and it has no access to your or your projects' files. The limits are read without asking the model. Paid API-key access is never used."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
