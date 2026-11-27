@@ -29,6 +29,18 @@ final class Preferences: ObservableObject {
     @Published var screenshotOffers: Bool { didSet { store.set(screenshotOffers, forKey: Key.screenshotOffers) } }
     @Published var calendarReminders: Bool { didSet { store.set(calendarReminders, forKey: Key.calendarReminders) } }
     @Published var showMenuBarIcon: Bool { didSet { store.set(showMenuBarIcon, forKey: Key.showMenuBarIcon) } }
+    /// Codex's limits as last read, kept apart from Claude's.
+    var lastCodexLimits: CodexLimits {
+        get { CodexLimits(stored: (store.array(forKey: Key.lastCodexLimits) as? [[String: Double]]) ?? []) }
+        set { store.set(newValue.stored, forKey: Key.lastCodexLimits) }
+    }
+    /// The chat tab chosen last. Claude for everyone who has not chosen.
+    var chatProvider: Provider {
+        get { Provider(rawValue: store.string(forKey: Key.chatProvider) ?? "") ?? .claude }
+        set { store.set(newValue.rawValue, forKey: Key.chatProvider) }
+    }
+    /// Empty: find Codex on its own.
+    @Published var codexPath: String { didSet { store.set(codexPath, forKey: Key.codexPath) } }
     /// Empty: find Claude Code on its own.
     @Published var claudePath: String { didSet { store.set(claudePath, forKey: Key.claudePath) } }
 
@@ -51,6 +63,9 @@ final class Preferences: ObservableObject {
         static let calendarReminders = "calendarReminders"
         static let showMenuBarIcon = "showMenuBarIcon"
         static let claudePath = "claudePath"
+        static let codexPath = "codexPath"
+        static let lastCodexLimits = "lastCodexLimits"
+        static let chatProvider = "chatProvider"
         static let didSetUpLoginItem = "didSetUpLoginItem"
     }
 
@@ -83,6 +98,7 @@ final class Preferences: ObservableObject {
         calendarReminders = store.bool(forKey: Key.calendarReminders)
         showMenuBarIcon = store.bool(forKey: Key.showMenuBarIcon)
         claudePath = store.string(forKey: Key.claudePath) ?? ""
+        codexPath = store.string(forKey: Key.codexPath) ?? ""
     }
 
     /// Light or dark for the widget's own glass, whatever the theme choice.

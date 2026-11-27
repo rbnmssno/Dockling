@@ -229,7 +229,7 @@ final class ClaudeCodeWatcher {
             brain?.upset()
             brain?.notify(Card(icon: .fail, color: Card.red, text: tr("Claude остановился с ошибкой", "Claude stopped with an error"), meta: s?.project,
                                actions: [CardAction(title: tr("Открыть", "Open"), primary: true) { [weak self] in self?.openProject(s?.cwd) }],
-                               duration: 6.4, tag: "cc-fail"))
+                               duration: 6.4, tag: "cc-fail", source: "Claude Code"))
         case "SessionEnd":
             sessions[id] = nil
             pending.removeAll { item in
@@ -252,7 +252,7 @@ final class ClaudeCodeWatcher {
         brain?.react("done")
         brain?.notify(Card(icon: .done, color: Card.green, text: Self.summary(message), meta: meta,
                            actions: [CardAction(title: tr("Открыть", "Open"), primary: true) { [weak self] in self?.openProject(session.cwd) }],
-                           duration: 8, tag: "cc-done"))
+                           duration: 8, tag: "cc-done", source: "Claude Code"))
     }
 
     /// The first sentence of Claude's last message, short enough for a card.
@@ -293,11 +293,11 @@ final class ClaudeCodeWatcher {
                                          actions: [CardAction(title: tr("Разрешить", "Allow"), primary: true) { answer("allow") },
                                                    CardAction(title: tr("Отклонить", "Deny")) { answer("deny") },
                                                    CardAction(title: tr("В VS Code", "In VS Code")) { answer(nil) }],
-                                         sticky: true, hold: true, tag: "cc-question"))
+                                         sticky: true, hold: true, tag: "cc-question", source: "Claude Code"))
         } else if let waiting = sessions.values.first(where: { $0.state == .wait }) {
             brain.cards.setStanding(Card(icon: .code, color: Card.amber, text: tr("Claude ждёт ответа", "Claude is waiting for you"), meta: waiting.project,
                                          actions: [CardAction(title: tr("Открыть", "Open"), primary: true) { [weak self] in self?.openProject(waiting.cwd) }],
-                                         sticky: true, hold: true, tag: "cc-question"))
+                                         sticky: true, hold: true, tag: "cc-question", source: "Claude Code"))
         } else {
             brain.cards.setStanding(nil)
         }

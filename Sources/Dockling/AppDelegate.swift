@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
         brain.cards.look = { [unowned self] in (self.prefs.isDark, self.prefs.transparency) }
         chat = ChatController(prefs: prefs, brain: brain, stage: stage)
         chat.onLimits = { [unowned self] limits in self.chat.warnAboutLimits(limits, brain: self.brain) }
+        chat.onCodexLimits = { [unowned self] limits in self.chat.warnAboutCodexLimits(limits, brain: self.brain) }
         Reminders.shared.fire = { [unowned self] text in self.remind(text) }
         settings = SettingsWindowController(app: self)
 
@@ -70,6 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PetHost {
 
     /// Opening the app again (from Applications, Spotlight or Launchpad) while it runs shows the settings;
     /// with the menu bar icon off this is the other way in besides his right-click menu.
+    func applicationWillTerminate(_ notification: Notification) {
+        chat?.shutdown()
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         openSettings()
         return false

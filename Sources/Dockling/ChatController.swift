@@ -2,25 +2,32 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Runs the chat: the window over the character's head, Claude, voice, attachments and reminders.
+/// Runs the chat: the window over the character's head, Claude and Codex, voice, attachments and reminders.
+/// Each provider has its own conversation; events always go to the conversation they belong to, whichever
+/// tab is showing.
 final class ChatController {
     let model = ChatModel()
     private let claude = ClaudeChat()
     private let probe = LimitsProbe()
+    private let codex = CodexChat()
     private let voice = Voice()
     private let prefs: Preferences
     private weak var brain: PetBrain?
     private weak var stage: PetStage?
     private var panel: ChatPanel?
     private var box: GlassBox?
-    private var voiceQuestion = false
+    /// The conversations whose current question was asked by voice, to read the answer aloud.
+    private var voiceAsked: Set<Provider> = []
+    /// The conversation the microphone is recording for.
+    private var voiceTarget: Provider?
     private var flagsMonitor: Any?
     private var resignObserver: Any?
     private var lastClipboard = NSPasteboard.general.changeCount
     private var warned: Set<String> = []
-    /// Extra lines Claude gets before each message: the time and today's calendar.
+    /// Extra lines the model gets before each message: the time and today's calendar.
     var context: () -> String = { "" }
     var onLimits: ((PlanLimits) -> Void)?
+    var onCodexLimits: ((CodexLimits) -> Void)?
 
     var isOpen: Bool { panel?.isVisible == true }
 
@@ -31,10 +38,26 @@ final class ChatController {
         claude.binaryOverride = { [weak prefs] in prefs?.claudePath ?? "" }
         claude.onEvent = { [weak self] in self?.handle($0) }
         probe.binaryOverride = { [weak prefs] in prefs?.claudePath ?? "" }
+        codex.binaryOverride = { [weak prefs] in prefs?.codexPath ?? "" }
+        codex.onEvent = { [weak self] in self?.handle($0) }
         model.limits = prefs.lastLimits.current
-        voice.onText = { [weak self] text in self?.model.input = text }
-        model.messages = [ChatMessage(role: .bot, text: tr("Привет. Я живу у тебя на Dock. Спрашивай что угодно.", "Hi. I live on your Dock. Ask me anything."))]
-        model.status = ClaudeChat.locate(custom: prefs.claudePath) == nil ? ChatModel.noClaude : ChatModel.online
+        model.codexLimits = prefs.lastCodexLimits.current
+        model.provider = prefs.chatProvider
+        voice.onText = { [weak self] text in
+            guard let self, let p = self.voiceTarget else { return }
+            self.model.update(p) { $0.input = text }
+        }
+        model.update(.claude) { $0.messages = [ChatMessage(role: .bot, text: tr("Привет. Я живу у тебя на Dock. Спрашивай что угодно.", "Hi. I live on your Dock. Ask me anything."))] }
+        model.update(.codex) { $0.messages = [ChatMessage(role: .bot, text: tr("Привет, это Codex. Чем помочь?", "Hi, it's Codex. How can I help?"))] }
+        refreshStatus()
+    }
+
+    private func refreshStatus() {
+        model.update(.claude) { $0.status = ClaudeChat.locate(custom: prefs.claudePath) == nil ? ChatModel.noClaude : ChatModel.online }
+        let codexFound = CodexChat.locate(custom: prefs.codexPath) != nil
+        model.update(.codex) { t in
+            if !codexFound { t.status = ChatModel.noCodex } else if t.status == ChatModel.noCodex { t.status = ChatModel.online }
+        }
     }
 
     // MARK: - Window
@@ -49,9 +72,9 @@ final class ChatController {
         // The face from the current sheet (it may have been replaced in Settings).
         model.avatar = stage.skin?.faceImage().map { NSImage(cgImage: $0, size: CGSize(width: $0.width, height: $0.height)) }
         offerClipboard()
-        model.status = ClaudeChat.locate(custom: prefs.claudePath) == nil ? ChatModel.noClaude : ChatModel.online
+        refreshStatus()
         // The numbers are there before the first message, and fresh.
-        refreshLimits(ifOlderThan: 90)
+        refreshSelectedLimits()
         restyle()
         place(over: stage, in: window)
         brain?.cards.hide()
@@ -66,14 +89,32 @@ final class ChatController {
 
     func close() {
         guard let panel, panel.isVisible else { return }
-        if model.listening { stopListening() }
+        if voiceTarget != nil { stopListening() }
         if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
         flagsMonitor = nil
         lastClipboard = NSPasteboard.general.changeCount
         panel.orderOut(nil)
         brain?.settle()
         brain?.cards.setStanding(brain?.cards.standing)
+        if !model.thread(.codex).busy { codex.scheduleIdle() }
     }
+
+    /// Shows the other conversation. A reply running in the one left keeps going there.
+    func select(_ provider: Provider) {
+        guard model.provider != provider else { return }
+        model.provider = provider
+        prefs.chatProvider = provider
+        refreshStatus()
+        if isOpen { refreshSelectedLimits() }
+        resize()
+    }
+
+    func shutdown() {
+        codex.shutdown()
+    }
+
+    /// For DevTools: the Stop button of the conversation on screen.
+    func stopForDemo() { stopReply() }
 
     private func build() {
         let panel = ChatPanel()
@@ -84,6 +125,7 @@ final class ChatController {
                             stopListening: { [weak self] in self?.stopListening() },
                             quick: { [weak self] text in self?.send(text) },
                             dropAttachment: { [weak self] in self?.model.attachment = nil; self?.resize() },
+                            select: { [weak self] in self?.select($0) },
                             close: { [weak self] in self?.close() })
         let host = NSHostingView(rootView: view)
         let box = GlassBox(content: host, cornerRadius: 26)
@@ -92,7 +134,7 @@ final class ChatController {
         resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
             // Clicking anywhere else closes the chat, as with a popover.
             // A scripted showcase runs while another app has the focus, so there it stays open.
-            guard let self, !self.model.listening, !DevTools.scripted else { return }
+            guard let self, self.voiceTarget == nil, !DevTools.scripted else { return }
             Log.debug("chat lost focus, closing")
             self.close()
         }
@@ -162,13 +204,15 @@ final class ChatController {
         send(text)
     }
 
-    func send(_ text: String, viaVoice: Bool = false) {
-        guard !model.busy else { return }
+    /// Sends to the selected conversation, or to `provider`.
+    func send(_ text: String, viaVoice: Bool = false, to provider: Provider? = nil) {
+        let p = provider ?? model.provider
+        guard !model.thread(p).busy else { return }
         voice.hush()
-        voiceQuestion = viaVoice
-        model.messages.append(ChatMessage(role: .me, text: text))
-        if handleReminder(text) { return }
-        let att = model.attachment
+        if viaVoice { voiceAsked.insert(p) } else { voiceAsked.remove(p) }
+        model.update(p) { $0.messages.append(ChatMessage(role: .me, text: text)) }
+        if handleReminder(text, in: p) { return }
+        let att = model.thread(p).attachment
         var message = text
         var image: Data?
         if let att {
@@ -183,110 +227,180 @@ final class ChatController {
         }
         let ctx = context()
         if !ctx.isEmpty { message = "[" + ctx + "]\n\n" + message }
-        model.messages.append(ChatMessage(role: .bot, text: "", thinking: true))
-        model.busy = true
+        model.update(p) { t in
+            t.messages.append(ChatMessage(role: .bot, text: "", thinking: true))
+            t.busy = true
+        }
         brain?.thinking = true
-        claude.send(text: message, image: image)
+        switch p {
+        case .claude: claude.send(text: message, image: image)
+        case .codex: codex.send(text: message, image: image)
+        }
     }
 
     private func stopReply() {
-        claude.stop()
+        switch model.provider {
+        case .claude: claude.stop()
+        case .codex: codex.stop()
+        }
     }
 
     private func handle(_ event: ClaudeChat.Event) {
+        if case .partial = event {} else { Log.debug("claude event \(event)") }
         switch event {
-        case .partial: break
-        default: Log.debug("chat event \(event)")
+        case .partial(let text): partial(text, in: .claude)
+        case .finished(let text): finished(text, in: .claude)
+        case .failed(let text): failed(text, in: .claude)
+        case .limits(let limits): took(limits)
         }
+    }
+
+    private func handle(_ event: CodexChat.Event) {
+        if case .partial = event {} else { Log.debug("codex event \(event)") }
         switch event {
-        case .partial(let text):
-            updateLast(text)
-            brain?.thinking = false
-            brain?.talking = true
-        case .finished(let text):
-            updateLast(text.isEmpty ? tr("Остановлено.", "Stopped.") : text)
-            finishReply()
-            if voiceQuestion && prefs.speakVoiceReplies && !text.isEmpty { voice.speak(text) }
-        case .failed(let text):
-            if let last = model.messages.last, last.role == .bot, last.text.isEmpty { model.messages.removeLast() }
-            model.messages.append(ChatMessage(role: .note, text: text))
-            finishReply()
-        case .limits(let limits):
-            took(limits)
+        case .partial(let text): partial(text, in: .codex)
+        case .finished(let text): finished(text, in: .codex)
+        case .failed(let text): failed(text, in: .codex)
+        case .limits(let limits): tookCodex(limits)
+        case .status(let status): model.update(.codex) { $0.status = status }
         }
+    }
+
+    private func partial(_ text: String, in p: Provider) {
+        guard model.thread(p).busy else { return }
+        updateLast(text, in: p)
+        brain?.thinking = false
+        brain?.talking = true
+    }
+
+    private func finished(_ text: String, in p: Provider) {
+        updateLast(text.isEmpty ? tr("Остановлено.", "Stopped.") : text, in: p)
+        finishReply(in: p)
+        if voiceAsked.contains(p) && prefs.speakVoiceReplies && !text.isEmpty { voice.speak(text) }
+        voiceAsked.remove(p)
+    }
+
+    private func failed(_ text: String, in p: Provider) {
+        model.update(p) { t in
+            if let last = t.messages.last, last.role == .bot, last.text.isEmpty { t.messages.removeLast() }
+            t.messages.append(ChatMessage(role: .note, text: text))
+        }
+        finishReply(in: p)
+        voiceAsked.remove(p)
     }
 
     private func took(_ limits: PlanLimits) {
         model.limits = limits
-        model.checkingLimits = false
+        model.update(.claude) { $0.checkingLimits = false }
         prefs.lastLimits = limits
         onLimits?(limits)
+    }
+
+    private func tookCodex(_ limits: CodexLimits) {
+        model.codexLimits = limits
+        model.update(.codex) { $0.checkingLimits = false }
+        prefs.lastCodexLimits = limits
+        onCodexLimits?(limits)
+    }
+
+    /// The limits of the conversation on screen. Codex's come from its app-server without asking the model;
+    /// Claude's need the smallest request, so they are only asked for while Claude's tab is showing.
+    private func refreshSelectedLimits() {
+        switch model.provider {
+        case .claude: refreshLimits(ifOlderThan: 90)
+        case .codex: refreshCodexLimits(ifOlderThan: 60)
+        }
     }
 
     /// Asks Claude Code for the limits, unless they were heard within `maxAge` seconds.
     func refreshLimits(ifOlderThan maxAge: TimeInterval) {
         model.limits = model.limits.current
-        model.checkingLimits = probe.run(ifOlderThan: maxAge) { [weak self] limits in
-            if let limits { self?.took(limits) } else { self?.model.checkingLimits = false }
+        let asking = probe.run(ifOlderThan: maxAge) { [weak self] limits in
+            if let limits { self?.took(limits) } else { self?.model.update(.claude) { $0.checkingLimits = false } }
+        }
+        model.update(.claude) { $0.checkingLimits = asking }
+    }
+
+    /// Reads Codex's limits from its app-server, unless they were read within `maxAge` seconds.
+    func refreshCodexLimits(ifOlderThan maxAge: TimeInterval) {
+        guard CodexChat.locate(custom: prefs.codexPath) != nil else { return }
+        model.codexLimits = model.codexLimits.current
+        let asking = codex.refreshLimits(ifOlderThan: maxAge) { [weak self] limits in
+            if let limits { self?.tookCodex(limits) } else { self?.model.update(.codex) { $0.checkingLimits = false } }
+        }
+        if asking { model.update(.codex) { $0.checkingLimits = true } }
+    }
+
+    private func updateLast(_ text: String, in p: Provider) {
+        model.update(p) { t in
+            guard let i = t.messages.lastIndex(where: { $0.role == .bot }) else { return }
+            t.messages[i].text = text
+            t.messages[i].thinking = false
         }
     }
 
-    private func updateLast(_ text: String) {
-        guard let i = model.messages.lastIndex(where: { $0.role == .bot }) else { return }
-        model.messages[i].text = text
-        model.messages[i].thinking = false
+    private func finishReply(in p: Provider) {
+        model.update(p) { $0.busy = false }
+        let anyBusy = Provider.allCases.contains { model.thread($0).busy }
+        if !anyBusy {
+            brain?.thinking = false
+            brain?.talking = false
+        }
     }
 
-    private func finishReply() {
-        model.busy = false
-        brain?.thinking = false
-        brain?.talking = false
-    }
-
-    /// Puts a card that arrived while the chat is open into the conversation.
+    /// Puts a card that arrived while the chat is open into the conversation on screen. A card with
+    /// buttons is drawn apart from the bubbles, under the name of where it came from, so a Claude Code
+    /// permission request never looks like a question from the conversation it landed in.
     func note(_ card: Card) {
+        let p = model.provider
         if card.actions.isEmpty {
-            model.messages.append(ChatMessage(role: .note, text: card.text + (card.meta.map { " · " + $0 } ?? "")))
+            let source = card.source.map { $0 + ": " } ?? ""
+            model.update(p) { $0.messages.append(ChatMessage(role: .note, text: source + card.text + (card.meta.map { " · " + $0 } ?? ""))) }
         } else {
-            var message = ChatMessage(role: .bot, text: card.text + (card.meta.map { "\n" + $0 } ?? ""))
+            var message = ChatMessage(role: .card, text: card.text + (card.meta.map { "\n" + $0 } ?? ""), source: card.source)
             let id = message.id
             message.actions = card.actions.map { action in
                 CardAction(title: action.title, primary: action.primary) { [weak self] in
                     action.run()
-                    if let i = self?.model.messages.firstIndex(where: { $0.id == id }) { self?.model.messages[i].actions = [] }
+                    self?.model.update(p) { t in
+                        if let i = t.messages.firstIndex(where: { $0.id == id }) { t.messages[i].actions = [] }
+                    }
                 }
             }
-            model.messages.append(message)
+            model.update(p) { $0.messages.append(message) }
         }
     }
 
     // MARK: - Voice
 
     private func startListening() {
-        guard !model.listening, !model.busy else { return }
+        let p = model.provider
+        guard voiceTarget == nil, !model.thread(p).busy else { return }
         voice.hush()
-        model.input = ""
-        model.listening = true
+        voiceTarget = p
+        model.update(p) { t in t.input = ""; t.listening = true }
         brain?.listening = true
         voice.start { [weak self] problem in
             guard let self else { return }
-            self.model.listening = false
+            self.voiceTarget = nil
+            self.model.update(p) { t in t.listening = false; t.messages.append(ChatMessage(role: .note, text: problem)) }
             self.brain?.listening = false
-            self.model.messages.append(ChatMessage(role: .note, text: problem))
         }
     }
 
+    /// The question goes to the conversation it was started in, even if the other tab is showing now.
     private func stopListening() {
-        guard model.listening else { return }
-        model.listening = false
+        guard let p = voiceTarget else { return }
+        voiceTarget = nil
+        model.update(p) { $0.listening = false }
         brain?.listening = false
         voice.stop { [weak self] text in
             guard let self else { return }
-            self.model.input = ""
+            self.model.update(p) { $0.input = "" }
             if text.isEmpty {
-                self.model.messages.append(ChatMessage(role: .note, text: tr("Ничего не расслышал. Зажми кнопку и говори.", "I didn't catch that. Hold the button and speak.")))
+                self.model.update(p) { $0.messages.append(ChatMessage(role: .note, text: tr("Ничего не расслышал. Зажми кнопку и говори.", "I didn't catch that. Hold the button and speak."))) }
             } else {
-                self.send(text, viaVoice: true)
+                self.send(text, viaVoice: true, to: p)
             }
         }
     }
@@ -296,7 +410,7 @@ final class ChatController {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if flags == .option {
             if model.buttonMode == .mic { startListening() }
-        } else if model.listening {
+        } else if voiceTarget != nil {
             stopListening()
         }
     }
@@ -375,10 +489,10 @@ final class ChatController {
 
     /// "Напомни через 20 минут позвонить маме", "remind me in 20 minutes to call mom" and "remind me to call mom
     /// in 20 minutes" are handled here, without asking Claude. The answer is in the language of the request.
-    private func handleReminder(_ text: String) -> Bool {
+    private func handleReminder(_ text: String, in p: Provider) -> Bool {
         guard let r = Self.parseReminder(text) else { return false }
         let what = r.what.isEmpty ? (r.russian ? "ты просил напомнить" : "You asked me to remind you") : r.what
-        model.messages.append(ChatMessage(role: .bot, text: r.russian ? "Хорошо, напомню через \(r.when)." : "OK, I'll remind you in \(r.when)."))
+        model.update(p) { $0.messages.append(ChatMessage(role: .bot, text: r.russian ? "Хорошо, напомню через \(r.when)." : "OK, I'll remind you in \(r.when).")) }
         Reminders.shared.add(after: r.seconds, text: what)
         return true
     }
@@ -424,19 +538,40 @@ final class ChatController {
 
     // MARK: - Limits
 
-    /// Cards when the session limit crosses 85% and 98%.
+    /// Cards when Claude's session limit crosses 85% and 98%.
     func warnAboutLimits(_ limits: PlanLimits, brain: PetBrain) {
         guard let s = limits.session else { return }
         let resetKey = limits.sessionReset.map { String(Int($0.timeIntervalSince1970)) } ?? "?"
         let mins = limits.sessionReset.map { max(0, Int($0.timeIntervalSinceNow / 60)) }
         let meta = mins.map { tr("Сброс через ", "Resets in ") + durationText(minutes: $0) }
+        let text = tr("Лимит сессии Claude: \(Int(s))%", "Claude session limit: \(Int(s))%")
         if s >= 98, !warned.contains("98-" + resetKey) {
             warned.insert("98-" + resetKey)
             brain.upset()
-            brain.notify(Card(icon: .limit, color: Card.red, text: tr("Лимит сессии: \(Int(s))%", "Session limit: \(Int(s))%"), meta: meta, duration: 6, tag: "limit"))
+            brain.notify(Card(icon: .limit, color: Card.red, text: text, meta: meta, duration: 6, tag: "limit"))
         } else if s >= 85, !warned.contains("85-" + resetKey) {
             warned.insert("85-" + resetKey)
-            brain.notify(Card(icon: .limit, color: Card.amber, text: tr("Лимит сессии: \(Int(s))%", "Session limit: \(Int(s))%"), meta: meta, duration: 5, tag: "limit"))
+            brain.notify(Card(icon: .limit, color: Card.amber, text: text, meta: meta, duration: 5, tag: "limit"))
+        }
+    }
+
+    /// Cards when a Codex window crosses 85% and 98%, named by the window, each once per window and reset.
+    func warnAboutCodexLimits(_ limits: CodexLimits, brain: PetBrain) {
+        for w in limits.windows {
+            let key = "codex-\(w.minutes ?? 0)-" + (w.reset.map { String(Int($0.timeIntervalSince1970 / 60)) } ?? "?")
+            let meta = w.reset.map { tr("Сброс через ", "Resets in ") + durationText(minutes: max(0, Int($0.timeIntervalSinceNow / 60))) }
+            let name = CodexLimits.label(minutes: w.minutes).lowercased()
+            let text = tr("Лимит Codex (\(name)): \(Int(w.used))%", "Codex limit (\(name)): \(Int(w.used))%")
+            if w.used >= 98, !warned.contains(key + "-98") {
+                warned.insert(key + "-98")
+                brain.upset()
+                brain.notify(Card(icon: .limit, color: Card.red, text: text, meta: meta, duration: 6, tag: "codex-limit"))
+                return
+            } else if w.used >= 85, w.used < 98, !warned.contains(key + "-85") {
+                warned.insert(key + "-85")
+                brain.notify(Card(icon: .limit, color: Card.amber, text: text, meta: meta, duration: 5, tag: "codex-limit"))
+                return
+            }
         }
     }
 }

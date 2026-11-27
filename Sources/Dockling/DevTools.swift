@@ -7,7 +7,8 @@ import Speech
 ///   --isolated            a test copy beside the user's own Dockling: its own settings (app.dockling.Dockling.test)
 ///                         and its own data folder in the temporary directory, so the running pet is left alone
 ///   --skin <folder>       use sheet.png and sheet.json from a folder, without touching the settings
-///   --demo <name>         run a scenario: walk, chat, cards, sleep, drop, follow, limits
+///   --demo <name>         run a scenario: walk, chat, cards, sleep, drop, follow, limits, codex, codex-limits, tabs
+///   --provider claude|codex   open the chat on that tab
 ///   --dock-display main|external   his Dock is on that display, whatever the real Dock does
 ///   --quit-after <sec>    leave after a while
 ///   --render <folder>     write offscreen pictures of the cards and the chat
@@ -17,6 +18,8 @@ enum DevTools {
     static var scripted = false
     static let isolated = CommandLine.arguments.contains("--isolated")
     static var showcase: String? { value(after: "--showcase") }
+    /// Demos that send a test question to a model: the calendar is not read and only the test text goes out.
+    static var neutralDemo: Bool { ["codex", "tabs"].contains(value(after: "--demo") ?? "") }
 
     static func value(after flag: String) -> String? {
         let args = CommandLine.arguments
@@ -36,6 +39,7 @@ enum DevTools {
             PetBrain.sleepAfter = t
             app.brain.restartSleepCheck()
         }
+        if let p = value(after: "--provider").flatMap(Provider.init(rawValue:)) { app.chat.select(p) }
         guard let demo = value(after: "--demo") else { return }
         let brain = app.brain!
         let after: (Double, @escaping () -> Void) -> Void = { t, f in DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: f) }
@@ -49,6 +53,44 @@ enum DevTools {
         case "limits":
             // The chat opens with no message sent; the limits come by themselves.
             after(1) { app.chat.open() }
+        case "codex-limits":
+            scripted = true  // no clipboard offers: only the scripted question goes out
+            // Codex's limits before any message, read from its app-server without asking the model.
+            after(1) { app.chat.select(.codex); app.chat.open() }
+            after(9) {
+                let l = app.chat.model.codexLimits
+                Log.debug("codex limits shown: " + app.chat.model.limitRows.map { "\($0.label)=\($0.value.map { String(Int($0)) } ?? "-")" }.joined(separator: " ")
+                          + " | " + app.chat.model.limitNote + " | ordinary \(l.ordinaryAllowed.map { $0 ? "yes" : "no" } ?? "-")"
+                          + " | status " + app.chat.model.status)
+            }
+        case "codex":
+            scripted = true  // no clipboard offers: only the scripted question goes out
+            app.chat.context = { "" }  // no time or calendar line: only the test question
+            // One short neutral question to Codex; with --stop-after it is stopped midway.
+            after(1) { app.chat.select(.codex); app.chat.open() }
+            after(2) { app.chat.send(value(after: "--say") ?? tr("Ответь одним коротким предложением: ты на связи?", "Answer in one short sentence: are you there?")) }
+            if let s = value(after: "--stop-after"), let t = Double(s) {
+                after(2 + t) { Log.debug("demo: stop"); app.chat.stopForDemo() }
+            }
+            after(40) {
+                for p in Provider.allCases {
+                    let t = app.chat.model.thread(p)
+                    Log.debug("thread \(p.rawValue): busy \(t.busy), " + t.messages.map { "[\($0.role)] \($0.text.prefix(80))" }.joined(separator: " / "))
+                }
+            }
+        case "tabs":
+            scripted = true  // no clipboard offers: only the scripted question goes out
+            app.chat.context = { "" }  // no time or calendar line: only the test question
+            // Switching while a reply runs: the answer stays in its own conversation.
+            after(1) { app.chat.select(.codex); app.chat.open() }
+            after(2) { app.chat.send(value(after: "--say") ?? tr("Ответь одним коротким предложением: ты на связи?", "Answer in one short sentence: are you there?")) }
+            after(2.3) { app.chat.select(.claude) }
+            after(30) {
+                for p in Provider.allCases {
+                    let t = app.chat.model.thread(p)
+                    Log.debug("thread \(p.rawValue): busy \(t.busy), " + t.messages.map { "[\($0.role)] \($0.text.prefix(80))" }.joined(separator: " / "))
+                }
+            }
         case "follow":
             // The way he follows the Dock to another display: down below the edge, up again further on.
             after(1.5) {

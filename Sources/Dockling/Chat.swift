@@ -17,37 +17,121 @@ struct ChatAttachment {
 }
 
 struct ChatMessage: Identifiable {
-    enum Role { case me, bot, note }
+    /// `card`: a notification from outside the chat (Claude Code, the calendar, a screenshot) with buttons.
+    enum Role { case me, bot, note, card }
     let id = UUID()
     var role: Role
     var text: String
     var thinking = false
     var actions: [CardAction] = []
+    /// Where a card comes from, shown over it ("Claude Code"), so it is never taken for the chat's own question.
+    var source: String? = nil
+}
+
+/// Who the pet answers as. Each has its own conversation, draft, attachment, reply state and limits.
+enum Provider: String, CaseIterable {
+    case claude, codex
+
+    var title: String { self == .claude ? "Claude" : "Codex" }
+}
+
+/// One provider's side of the chat.
+struct ChatThread {
+    var messages: [ChatMessage] = []
+    var input = ""
+    var attachment: ChatAttachment?
+    var busy = false
+    var listening = false
+    /// The limits are being asked for right now.
+    var checkingLimits = false
+    var status = ChatModel.online
 }
 
 final class ChatModel: ObservableObject {
-    @Published var messages: [ChatMessage] = []
-    @Published var input = ""
-    @Published var busy = false
-    @Published var listening = false
-    @Published var attachment: ChatAttachment?
+    @Published var provider: Provider = .claude
+    @Published var threads: [Provider: ChatThread] = [.claude: ChatThread(), .codex: ChatThread()]
+    /// Claude's limits.
     @Published var limits = PlanLimits()
-    /// Claude Code is being asked for the limits right now.
-    @Published var checkingLimits = false
-    @Published var status = ChatModel.online
+    @Published var codexLimits = CodexLimits()
     @Published var avatar: NSImage?
     /// How sharply the screen behind the glass shows through (0..1), from the transparency setting.
     @Published var clarity: Double = 0
 
-    /// The status line under the title while Claude Code is found.
+    /// The status line under the title.
     static let online = tr("на связи", "online")
     static let noClaude = tr("нет claude code", "no claude code")
+    static let noCodex = tr("нет codex", "no codex")
+    static let noLogin = tr("нет входа", "not signed in")
+    static let guardFailed = tr("нет защиты", "not safe")
+
+    func thread(_ p: Provider) -> ChatThread { threads[p] ?? ChatThread() }
+    func update(_ p: Provider, _ change: (inout ChatThread) -> Void) {
+        var t = thread(p)
+        change(&t)
+        threads[p] = t
+    }
+
+    // The selected provider's side, for the view and for callers that do not care which one it is.
+    var messages: [ChatMessage] { get { thread(provider).messages } set { update(provider) { $0.messages = newValue } } }
+    var input: String { get { thread(provider).input } set { update(provider) { $0.input = newValue } } }
+    var attachment: ChatAttachment? { get { thread(provider).attachment } set { update(provider) { $0.attachment = newValue } } }
+    var busy: Bool { get { thread(provider).busy } set { update(provider) { $0.busy = newValue } } }
+    var listening: Bool { thread(provider).listening }
+    var checkingLimits: Bool { thread(provider).checkingLimits }
+    var status: String { thread(provider).status }
 
     enum ButtonMode { case mic, send, stop, listen }
     var buttonMode: ButtonMode {
         if busy { return .stop }
         if listening { return .listen }
         return input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .mic : .send
+    }
+
+    /// The bars at the top: Claude's session and week, or Codex's windows (one, two or none known).
+    var limitRows: [(label: String, value: Double?)] {
+        switch provider {
+        case .claude:
+            return [(tr("Сессия", "Session"), limits.session), (tr("Неделя", "Week"), limits.week)]
+        case .codex:
+            let windows = codexLimits.windows
+            if windows.isEmpty { return [(tr("Лимит", "Limit"), nil)] }
+            return windows.prefix(2).map { (CodexLimits.label(minutes: $0.minutes), $0.used) }
+        }
+    }
+
+    /// "4 дек. в 23:11" or "Dec 4 at 11:11 PM", in the interface language.
+    static func resetDate(_ date: Date) -> String {
+        let day = DateFormatter(), time = DateFormatter()
+        day.locale = Language.locale
+        time.locale = Language.locale
+        day.setLocalizedDateFormatFromTemplate("dMMM")
+        time.setLocalizedDateFormatFromTemplate("jmm")
+        return day.string(from: date) + tr(" в ", " at ") + time.string(from: date)
+    }
+
+    /// The line under the bars.
+    var limitNote: String {
+        switch provider {
+        case .claude:
+            guard let reset = limits.sessionReset else {
+                return checkingLimits ? tr("Узнаю лимиты…", "Checking the limits…") : tr("Лимиты появятся после первого ответа.", "Limits appear after the first reply.")
+            }
+            let mins = Int(reset.timeIntervalSinceNow / 60)
+            if mins < 1 { return tr("Лимит сессии уже обновился, цифры уточнятся со следующим ответом.", "The session limit has reset; the numbers update with the next reply.") }
+            return tr("Сессия обновится через ", "Session resets in ") + durationText(minutes: mins) + "."
+        case .codex:
+            if codexLimits.blocked { return tr("Лимит Codex исчерпан: обычные запросы недоступны.", "Codex limit reached: ordinary requests are unavailable.") }
+            // The window that resets first.
+            guard let w = codexLimits.windows.filter({ $0.reset != nil }).min(by: { $0.reset! < $1.reset! }), let reset = w.reset else {
+                return checkingLimits ? tr("Узнаю лимиты Codex…", "Checking the Codex limits…") : tr("Лимиты Codex пока неизвестны.", "Codex limits aren't known yet.")
+            }
+            let mins = max(1, Int(reset.timeIntervalSinceNow / 60))
+            let name = CodexLimits.label(minutes: w.minutes)
+            let window = w.minutes == 10080 ? tr("Неделя", "Week") : tr("Окно \(name)", "The \(name) window")
+            // A day or more away: the date and time read better than a count of hours.
+            if mins >= 1440 { return window + tr(": сброс ", ": resets ") + Self.resetDate(reset) + "." }
+            return window + tr(" обновится через ", " resets in ") + durationText(minutes: mins) + "."
+        }
     }
 }
 
@@ -89,6 +173,7 @@ struct ChatView: View {
     let stopListening: () -> Void
     let quick: (String) -> Void
     let dropAttachment: () -> Void
+    let select: (Provider) -> Void
     let close: () -> Void
     @Environment(\.colorScheme) private var scheme
     @FocusState private var focused: Bool
@@ -120,6 +205,7 @@ struct ChatView: View {
             inputRow
         }
         .onAppear { focused = true }
+        .onChange(of: model.provider) { _ in focused = true }
     }
 
     private var header: some View {
@@ -136,28 +222,65 @@ struct ChatView: View {
             .frame(width: side, height: side)
             VStack(alignment: .leading, spacing: 1) {
                 Text("GHOST").font(.pixel(16))
-                Text(model.status.uppercased()).font(.pixel(11))
+                Text(model.status.uppercased()).font(.pixel(11)).lineLimit(1).truncationMode(.tail)
                     .foregroundStyle(model.status == ChatModel.online ? Color.green : dim)
             }
-            Spacer()
+            .layoutPriority(-1)
+            Spacer(minLength: 6)
+            tabs
             Button(action: close) {
                 PixelIconShape(icon: .close).fill(Color.primary).frame(width: 11, height: 11)
                     .frame(width: 28, height: 28).background(field, in: PixelRect(step: 3))
             }
             .buttonStyle(.plain)
             .help(tr("Закрыть", "Close"))
+            .accessibilityLabel(tr("Закрыть", "Close"))
         }
         .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
+    }
+
+    /// Claude and Codex: two small tabs, each with its own conversation. ⌘1 and ⌘2 switch between them.
+    private var tabs: some View {
+        HStack(spacing: 4) {
+            ForEach(Provider.allCases, id: \.self) { tab($0) }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(tr("Собеседник", "Chat with"))
+    }
+
+    private func tab(_ p: Provider) -> some View {
+        let on = model.provider == p
+        let busy = model.thread(p).busy
+        let key: KeyEquivalent = p == .claude ? "1" : "2"
+        return Button { select(p) } label: {
+            HStack(spacing: 4) {
+                Text(p.title.uppercased()).font(.pixel(11))
+                // A reply is running in the other conversation.
+                if busy && !on { Rectangle().fill(Color.primary.opacity(0.75)).frame(width: 4, height: 4) }
+            }
+            .foregroundStyle(on ? meText : Color.primary)
+            .padding(.horizontal, 7)
+            .frame(height: 24)
+            .background(on ? meBubble : field, in: PixelRect(step: 3))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(key, modifiers: .command)
+        .help(p.title + " (⌘" + String(key.character) + ")")
+        .accessibilityLabel(p.title)
+        .accessibilityValue(busy ? tr("отвечает", "replying") : "")
+        .accessibilityHint(tr("Открыть разговор с \(p.title)", "Open the conversation with \(p.title)"))
+        .accessibilityAddTraits(on ? [.isSelected] : [])
     }
 
     private var limits: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 14) {
-                limitRow(tr("Сессия", "Session"), model.limits.session)
-                limitRow(tr("Неделя", "Week"), model.limits.week)
+                ForEach(Array(model.limitRows.enumerated()), id: \.offset) { _, row in limitRow(row.label, row.value) }
             }
-            Text(limitNote).font(.system(size: 11)).foregroundStyle(dim).lineLimit(1)
+            Text(model.limitNote).font(.system(size: 11)).foregroundStyle(dim).lineLimit(1)
         }
+        .accessibilityElement(children: .combine)
         .padding(.vertical, 8)
         .overlay(alignment: .top) { dottedLine }
         .overlay(alignment: .bottom) { dottedLine }
@@ -169,21 +292,12 @@ struct ChatView: View {
             .overlay(Line().stroke(Color.primary.opacity(0.24), style: StrokeStyle(lineWidth: 2, dash: [2, 3])))
     }
 
-    private var limitNote: String {
-        guard let reset = model.limits.sessionReset else {
-            return model.checkingLimits ? tr("Узнаю лимиты…", "Checking the limits…") : tr("Лимиты появятся после первого ответа.", "Limits appear after the first reply.")
-        }
-        let mins = Int(reset.timeIntervalSinceNow / 60)
-        if mins < 1 { return tr("Лимит сессии уже обновился, цифры уточнятся со следующим ответом.", "The session limit has reset; the numbers update with the next reply.") }
-        return tr("Сессия обновится через ", "Session resets in ") + durationText(minutes: mins) + "."
-    }
-
     private func limitRow(_ label: String, _ value: Double?) -> some View {
         let pct = Int((value ?? 0).rounded())
         let on = Int((Double(pct) / 10).rounded())
         let color: Color = pct >= 95 ? Card.red : pct >= 80 ? Card.amber : Color.primary
         return HStack(spacing: 7) {
-            Text(label.uppercased()).font(.pixel(11))
+            Text(label.uppercased()).font(.pixel(11)).lineLimit(1).fixedSize()
             HStack(spacing: 2) {
                 ForEach(0..<10, id: \.self) { i in
                     Rectangle().fill(i < on && value != nil ? color : Color.primary.opacity(0.18)).frame(height: 9)
@@ -191,6 +305,8 @@ struct ChatView: View {
             }
             Text(value == nil ? "—" : "\(pct)%").font(.pixel(11)).frame(minWidth: 26, alignment: .trailing)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label + ": " + (value == nil ? tr("нет данных", "no data") : "\(pct)%"))
     }
 
     private var log: some View {
@@ -217,6 +333,23 @@ struct ChatView: View {
         case .note:
             Text(m.text).font(.system(size: 11.5)).foregroundStyle(dim).multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
+        case .card:
+            VStack(alignment: .leading, spacing: 6) {
+                if let source = m.source { Text(source.uppercased()).font(.pixel(10)).foregroundStyle(dim) }
+                Text(m.text).font(.system(size: 12.5)).textSelection(.enabled)
+                if !m.actions.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(Array(m.actions.enumerated()), id: \.offset) { _, a in
+                            quickButton(a.title, primary: a.primary) { a.run() }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 11).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(PixelRect(step: 3).stroke(Color.primary.opacity(0.28), style: StrokeStyle(lineWidth: 1.5, dash: [2, 3])))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(m.source ?? tr("Уведомление", "Notification"))
         case .me:
             HStack {
                 Spacer(minLength: 40)

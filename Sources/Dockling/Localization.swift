@@ -20,8 +20,12 @@ func tr(_ russian: String, _ english: String) -> String {
     Language.isRussian ? russian : english
 }
 
-/// A short time span for status lines and cards: "2 ч 13 мин" or "2 h 13 min".
+/// A short time span for status lines and cards: "2 ч 13 мин" or "2 h 13 min"; a day or longer as "6 дн 3 ч".
 func durationText(minutes: Int) -> String {
+    if minutes >= 1440 {
+        let d = minutes / 1440, h = (minutes % 1440) / 60
+        return h > 0 ? tr("\(d) дн \(h) ч", "\(d) d \(h) h") : tr("\(d) дн", "\(d) d")
+    }
     let h = minutes / 60, m = minutes % 60
     if h > 0 { return tr("\(h) ч \(m) мин", "\(h) h \(m) min") }
     return tr("\(m) мин", "\(m) min")

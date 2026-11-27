@@ -108,6 +108,7 @@ struct SettingsView: View {
     /// The built-in character, for the preview at the top.
     private let skin = Skin.load()
     @State private var claudeFound = ClaudeChat.locate(custom: "")?.path
+    @State private var codexFound: String?
 
     var body: some View {
         ScrollView {
@@ -150,6 +151,24 @@ struct SettingsView: View {
                     Text(tr("Лимиты приходят только вместе с ответом, поэтому раз в несколько минут через Claude Code уходит самый маленький запрос: около тысячи токенов самой дешёвой модели. Без этого лимиты узнаются, когда открываешь чат.", "The limits only come with an answer, so every few minutes the smallest request goes through Claude Code: about a thousand tokens of the cheapest model. Without this, the limits are asked for when you open the chat."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                section("Codex") {
+                    HStack(alignment: .firstTextBaseline) {
+                        Image(systemName: codexFound == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                            .foregroundStyle(codexFound == nil ? .orange : .green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(codexFound == nil ? tr("Codex не найден", "Codex not found") : tr("Вкладка Codex работает через твой Codex CLI, по входу ChatGPT", "The Codex tab runs on your Codex CLI with your ChatGPT login"))
+                            Text(codexFound.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? tr("Установи Codex CLI и войди через ChatGPT, или укажи путь к нему.", "Install the Codex CLI and sign in with ChatGPT, or choose where it is.")).font(.caption).foregroundStyle(.secondary)
+                                .lineLimit(1).truncationMode(.middle)
+                        }
+                        Spacer()
+                        if !prefs.codexPath.isEmpty {
+                            Button(tr("Сам", "Auto")) { prefs.codexPath = ""; codexFound = CodexChat.locate(custom: "")?.path }
+                        }
+                        Button(tr("Указать…", "Choose…"), action: pickCodex)
+                    }
+                    Text(tr("Codex только разговаривает: разговор не сохраняется в его истории, плагины, MCP, хуки и команды из твоего профиля Codex выключены, нет доступа к файлам пользователя и проектов. Лимиты читаются без запроса к модели. Платный доступ по API-ключу не используется.", "Codex only talks: the conversation isn't kept in its history, the plugins, MCP servers, hooks and commands from your Codex profile are off, and it has no access to your or your projects' files. The limits are read without asking the model. Paid API-key access is never used."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 section("Claude Code") {
                     Toggle(tr("Показывать, что делает Claude Code", "Show what Claude Code is doing"), isOn: Binding(get: { hooks.installed }, set: { hooks.setInstalled($0) }))
                     Text(tr("Добавляет хуки в ~/.claude/settings.json: статус работы, вопросы о разрешениях с кнопками, итог задачи. Чужие хуки не трогаются, копия файла сохраняется рядом.", "Adds hooks to ~/.claude/settings.json: work status, permission requests with buttons, a summary when a task ends. Other hooks are left alone, and a backup of the file is saved next to it."))
@@ -177,6 +196,7 @@ struct SettingsView: View {
             .padding(.top, 14)
         }
         .frame(minWidth: 520, minHeight: 600)
+        .onAppear { codexFound = CodexChat.locate(custom: prefs.codexPath)?.path }
     }
 
     // MARK: - Pieces
@@ -194,7 +214,7 @@ struct SettingsView: View {
             DockPreview(skin: skin, scaleX: prefs.scaleX, scaleY: prefs.scaleY, speed: prefs.walkSpeed)
             VStack(alignment: .leading, spacing: 6) {
                 Text("GHOST").font(.pixel(30)).foregroundStyle(.white)
-                Text(tr("Живёт на Dock, отвечает как Claude,\nследит за Claude Code и календарём.", "Lives on the Dock, answers as Claude,\nkeeps an eye on Claude Code and your calendar."))
+                Text(tr("Живёт на Dock, отвечает как Claude или Codex,\nследит за Claude Code и календарём.", "Lives on the Dock, answers as Claude or Codex,\nkeeps an eye on Claude Code and your calendar."))
                     .font(.callout).foregroundStyle(.white.opacity(0.82))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -232,6 +252,16 @@ struct SettingsView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         prefs.claudePath = url.path
         claudeFound = ClaudeChat.locate(custom: url.path)?.path
+    }
+
+    private func pickCodex() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.showsHiddenFiles = true
+        panel.message = tr("Выбери программу codex", "Choose the codex program")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        prefs.codexPath = url.path
+        codexFound = CodexChat.locate(custom: url.path)?.path
     }
 }
 

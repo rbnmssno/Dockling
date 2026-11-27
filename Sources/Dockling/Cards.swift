@@ -32,6 +32,8 @@ struct Card {
     var call = false
     /// Which kind it is, so a newer card of the same kind replaces it.
     var tag: String? = nil
+    /// Where it comes from ("Claude Code"), named over it when it lands in the chat.
+    var source: String? = nil
 
     static let blue = Color(red: 0.24, green: 0.48, blue: 0.96)
     static let amber = Color(red: 0.85, green: 0.51, blue: 0.04)

@@ -26,9 +26,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3.0</string>
+	<string>1.4.0</string>
 	<key>CFBundleVersion</key>
-	<string>10</string>
+	<string>11</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -83,6 +83,6 @@
 		</dict>
 	</array>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Speech recognition turns a spoken question into text for Claude.</string>
+	<string>Speech recognition turns a spoken question into text for the chat.</string>
 </dict>
 </plist>

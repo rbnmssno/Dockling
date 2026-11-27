@@ -83,7 +83,7 @@ final class Integrations {
             brain.notify(card)
         }
         let dev = CommandLine.arguments.contains("--dev")
-        if app.prefs.calendarReminders && !dev { calendar.start() }
+        if app.prefs.calendarReminders && !dev && !DevTools.neutralDemo { calendar.start() }
         app.chat.context = { [weak self] in
             let f = DateFormatter()
             f.locale = Language.locale

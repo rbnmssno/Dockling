@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "Dockling",
             path: "Sources/Dockling"
-        )
+        ),
+        .testTarget(
+            name: "DocklingTests",
+            dependencies: ["Dockling"],
+            path: "Tests/DocklingTests"
+        ),
     ]
 )
